@@ -1,4 +1,3 @@
-# new/util/client_transcribe_advanced.py
 import os
 import subprocess
 import srt
@@ -6,7 +5,6 @@ import chardet
 import asyncio
 import uuid
 from pathlib import Path
-from moviepy.editor import AudioFileClip
 from typing import List, Tuple, Optional
 
 from config import ClientConfig as Config
@@ -47,39 +45,209 @@ def extract_audio_with_ffmpeg(input_media_path: Path, output_audio_path: Path) -
         console.print(f"[bold red]Exception during FFmpeg audio extraction for {input_media_path}: {e}[/bold red]")
         return False
 
-# Helper to split audio using moviepy
-def split_audio_moviepy(audio_path: Path, split_duration_seconds: int) -> Optional[List[Path]]:
-    chunk_paths = []
-    audio = None  # Initialize audio to None
+# Helper to split audio using ffmpeg
+def split_audio_ffmpeg(audio_path: Path, split_duration_seconds: int) -> Optional[List[Path]]:
+    """
+    Split audio file using FFmpeg for better performance and cross-platform compatibility.
+    
+    Args:
+        audio_path: Path to the input audio file
+        split_duration_seconds: Duration in seconds for each chunk
+        
+    Returns:
+        List of paths to the split audio chunks, or None if failed
+    """
     try:
-        audio = AudioFileClip(str(audio_path))
-        duration = audio.duration
+        # Get audio duration using ffprobe
+        duration = get_media_duration_ffprobe(audio_path)
+        if duration is None:
+            console.print(f"[bold red]Could not get duration for {audio_path}[/bold red]")
+            return None
+            
         if duration <= split_duration_seconds:
-            audio.close()
-            return [audio_path] # No splitting needed
+            return [audio_path]  # No splitting needed
 
-        num_splits = int(duration / split_duration_seconds) + 1
+        # Calculate number of chunks, avoiding tiny final chunks
+        import math
+        num_full_chunks = math.floor(duration / split_duration_seconds)
+        remainder = duration % split_duration_seconds
+        # Add an extra chunk for the remainder only if it's significant (e.g., > 0.1s)
+        num_splits = num_full_chunks + (1 if remainder > 0.1 else 0)
+        # Ensure at least one chunk if the file is not empty
+        if num_splits == 0 and duration > 0:
+            num_splits = 1
         base_name = audio_path.stem
         output_dir = audio_path.parent
+        chunk_paths = []
 
-        console.print(f"Splitting audio into {num_splits} chunks...")
-        for i in range(num_splits):
-            start_time = i * split_duration_seconds
-            end_time = min((i + 1) * split_duration_seconds, duration)
-            subclip = audio.subclip(start_time, end_time)
-            
-            chunk_filename = f"{base_name}{Config.SPLIT_AUDIO_SUFFIX_PREFIX}{i}{audio_path.suffix}"
-            chunk_path = output_dir / chunk_filename
-            subclip.write_audiofile(str(chunk_path), codec='pcm_s16le', verbose=False, logger=None)
-            chunk_paths.append(chunk_path)
+        console.print(f"Splitting audio into {num_splits} chunks using FFmpeg...")
+
+        # Generate FFmpeg segmentation command
+        # Create a temporary segment list file for more precise control
+        segment_list_path = output_dir / f"{base_name}_segments.txt"
         
-        audio.close()
-        return chunk_paths
+        try:
+            # Write segment list
+            with open(segment_list_path, 'w', encoding='utf-8') as f:
+                for i in range(num_splits):
+                    start_time = i * split_duration_seconds
+                    end_time = min((i + 1) * split_duration_seconds, duration)
+                    duration_chunk = end_time - start_time
+                    
+                    chunk_filename = f"{base_name}{Config.SPLIT_AUDIO_SUFFIX_PREFIX}{i}{audio_path.suffix}"
+                    chunk_path = output_dir / chunk_filename
+                    chunk_paths.append(chunk_path)
+                    
+                    # Write segment entry: out_filename start_time duration
+                    f.write(f"{chunk_filename} {start_time:.3f} {duration_chunk:.3f}\n")
+
+            # Use FFmpeg with segment demuxer
+            cmd = [
+                "ffmpeg",
+                "-i", str(audio_path),  # Input file
+                "-f", "segment",        # Use segment demuxer
+                "-segment_list", str(segment_list_path),  # Segment list file
+                "-segment_times", ",".join([str(i * split_duration_seconds) for i in range(1, num_splits)]),  # Split points
+                "-segment_time_delta", "0.001",  # Small delta to ensure proper splitting
+                "-acodec", "pcm_s16le",  # Audio codec (same as extraction)
+                "-ar", "16000",         # Sample rate (consistent with transcription)
+                "-ac", "1",             # Mono channel
+                "-y",                   # Overwrite output files
+                str(output_dir / f"{base_name}{Config.SPLIT_AUDIO_SUFFIX_PREFIX}%d{audio_path.suffix}")
+            ]
+
+            console.print(f"Executing FFmpeg split command: {' '.join(cmd)}")
+            
+            # Run FFmpeg
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0:
+                console.print(f"[bold red]FFmpeg audio splitting failed for {audio_path}[/bold red]")
+                console.print(f"[bold red]FFmpeg stderr:[/bold red]\n{stderr.decode(errors='ignore')}")
+                return None
+
+            # Verify that all expected chunk files were created
+            existing_chunks = []
+            for chunk_path in chunk_paths:
+                if chunk_path.exists():
+                    existing_chunks.append(chunk_path)
+                else:
+                    console.print(f"[yellow]Warning: Expected chunk {chunk_path.name} was not created[/yellow]")
+            
+            if not existing_chunks:
+                console.print(f"[bold red]No audio chunks were created for {audio_path}[/bold red]")
+                return None
+                
+            console.print(f"Successfully created {len(existing_chunks)} audio chunks")
+            return existing_chunks
+
+        finally:
+            # Clean up segment list file
+            if segment_list_path.exists():
+                try:
+                    segment_list_path.unlink()
+                except OSError as e:
+                    console.print(f"[yellow]Warning: Could not delete segment list file {segment_list_path}: {e}[/yellow]")
+
     except Exception as e:
-        console.print(f"[bold red]Error splitting audio {audio_path}: {e}[/bold red]")
-        # Attempt to close audio clip if it was opened
-        if 'audio' in locals() and audio is not None:
-            audio.close()
+        console.print(f"[bold red]Error splitting audio {audio_path} with FFmpeg: {e}[/bold red]")
+        return None
+
+# Helper to split audio directly from media file using ffmpeg
+def split_media_audio_ffmpeg(media_path: Path, split_duration_seconds: int) -> Optional[List[Path]]:
+    """
+    Split audio directly from media file (video or audio) using FFmpeg.
+    This avoids the intermediate step of extracting audio to a separate WAV file.
+    
+    Args:
+        media_path: Path to the input media file (video or audio)
+        split_duration_seconds: Duration in seconds for each chunk
+        
+    Returns:
+        List of paths to the split audio chunks, or None if failed
+    """
+    try:
+        # Get media duration using ffprobe
+        duration = get_media_duration_ffprobe(media_path)
+        if duration is None:
+            console.print(f"[bold red]Could not get duration for {media_path}[/bold red]")
+            return None
+            
+        if duration <= split_duration_seconds:
+            # For short files, extract the entire audio as a single chunk
+            base_name = media_path.stem
+            output_dir = media_path.parent
+            single_chunk_path = output_dir / f"{base_name}{Config.TEMP_AUDIO_SUFFIX}"
+            
+            # Extract audio for the single chunk
+            if extract_audio_with_ffmpeg(media_path, single_chunk_path):
+                return [single_chunk_path]
+            else:
+                return None
+
+        # Calculate number of chunks, avoiding tiny final chunks
+        import math
+        num_full_chunks = math.floor(duration / split_duration_seconds)
+        remainder = duration % split_duration_seconds
+        # Add an extra chunk for the remainder only if it's significant (e.g., > 0.1s)
+        num_splits = num_full_chunks + (1 if remainder > 0.1 else 0)
+        # Ensure at least one chunk if the file is not empty
+        if num_splits == 0 and duration > 0:
+            num_splits = 1
+        base_name = media_path.stem
+        output_dir = media_path.parent
+        chunk_paths = []
+
+        console.print(f"Splitting media audio directly into {num_splits} chunks using FFmpeg...")
+
+        # Generate FFmpeg segmentation command for direct media splitting
+        # Use segment demuxer with audio stream selection
+        cmd = [
+            "ffmpeg",
+            "-i", str(media_path),  # Input media file
+            "-vn",                 # No video
+            "-acodec", "pcm_s16le",  # Audio codec (same as extraction)
+            "-ar", "16000",         # Sample rate (consistent with transcription)
+            "-ac", "1",             # Mono channel
+            "-async", "1",         # Resync audio
+            "-f", "segment",        # Use segment demuxer
+            "-segment_times", ",".join([str(i * split_duration_seconds) for i in range(1, num_splits)]),  # Split points
+            "-segment_time_delta", "0.001",  # Small delta to ensure proper splitting
+            "-y",                   # Overwrite output files
+            str(output_dir / f"{base_name}{Config.SPLIT_AUDIO_SUFFIX_PREFIX}%d.wav")
+        ]
+
+        console.print(f"Executing FFmpeg direct media split command: {' '.join(cmd)}")
+        
+        # Run FFmpeg
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            console.print(f"[bold red]FFmpeg direct media splitting failed for {media_path}[/bold red]")
+            console.print(f"[bold red]FFmpeg stderr:[/bold red]\n{stderr.decode(errors='ignore')}")
+            return None
+
+        # Verify chunk files were created and build the list
+        existing_chunks = []
+        for i in range(num_splits):
+            chunk_filename = f"{base_name}{Config.SPLIT_AUDIO_SUFFIX_PREFIX}{i}.wav"
+            chunk_path = output_dir / chunk_filename
+            if chunk_path.exists():
+                existing_chunks.append(chunk_path)
+            else:
+                console.print(f"[yellow]Warning: Expected chunk {chunk_filename} was not created[/yellow]")
+        
+        if not existing_chunks:
+            console.print(f"[bold red]No audio chunks were created for {media_path}[/bold red]")
+            return None
+            
+        console.print(f"Successfully created {len(existing_chunks)} audio chunks")
+        return existing_chunks
+
+    except Exception as e:
+        console.print(f"[bold red]Error splitting media audio {media_path} with FFmpeg: {e}[/bold red]")
         return None
 
 # Helper to transcribe a single audio chunk using existing logic
@@ -187,18 +355,87 @@ def correct_and_merge_srt_files(original_file_path: Path, chunk_srt_paths: List[
         return None
 
 # Helper to clean up intermediate files based on their stems
-def cleanup_intermediate_files_by_stems(stems_to_remove: List[str]):
+def cleanup_intermediate_files_by_stems(stems_to_remove: List[str], original_file_path: Path):
+    if not stems_to_remove:
+        console.print("[yellow]No stems to clean up[/yellow]")
+        return
+        
+    console.print(f"[cyan]Starting cleanup of {len(stems_to_remove)} stem(s)[/cyan]")
+    console.print(f"[cyan]Stems to clean: {stems_to_remove}[/cyan]")
+    console.print(f"[cyan]Original file path: {original_file_path}[/cyan]")
+    
+    # Define the suffixes of files to be removed
+    suffixes_to_remove = [".wav", ".txt", ".srt", ".json", ".merge.txt"]
+    total_cleaned = 0
+    total_errors = 0
+    
+    # Use the original file's directory for cleanup
+    directory = original_file_path.parent
+    console.print(f"[cyan]Cleaning in directory: {directory}[/cyan]")
+    
+    # First, let's check what files actually exist in the directory
+    console.print(f"[cyan]Files in directory:[/cyan]")
+    for file in directory.iterdir():
+        if any(file.name.endswith(suffix) for suffix in suffixes_to_remove):
+            console.print(f"    Found: {file}")
+    
     for stem_str in stems_to_remove:
-        # Define the suffixes of files to be removed
-        suffixes_to_remove = [".wav", ".txt", ".srt", ".json", ".merge.txt"]
+        console.print(f"  Cleaning up stem: {stem_str}")
+        stem_cleaned = 0
+        stem_errors = 0
+        
+        # Extract just the stem name (without path)
+        stem_name = Path(stem_str).stem
+        
+        console.print(f"    Stem name: {stem_name}")
+        
         for suffix in suffixes_to_remove:
-            file_to_remove = Path(str(stem_str) + suffix)
+            # Construct the full file path using the original file's directory and stem name
+            file_to_remove = directory / f"{stem_name}{suffix}"
+            console.print(f"    Looking for: {file_to_remove}")
             try:
                 if file_to_remove.exists():
                     os.remove(file_to_remove)
-                    console.print(f"Cleaned up: {file_to_remove}")
+                    console.print(f"    ✓ Cleaned up: {file_to_remove}")
+                    stem_cleaned += 1
+                    total_cleaned += 1
+                else:
+                    console.print(f"    - File not found: {file_to_remove}")
             except OSError as e:
-                console.print(f"[yellow]Error deleting {file_to_remove}: {e}[/yellow]")
+                console.print(f"[yellow]    ✗ Error deleting {file_to_remove}: {e}[/yellow]")
+                stem_errors += 1
+                total_errors += 1
+        
+        if stem_cleaned > 0:
+            console.print(f"  → Stem {stem_str}: {stem_cleaned} files cleaned, {stem_errors} errors")
+        elif stem_errors == 0:
+            console.print(f"  → Stem {stem_str}: no files found (already clean)")
+    
+    console.print(f"[green]Cleanup completed: {total_cleaned} files cleaned, {total_errors} errors[/green]")
+    
+    # Additional cleanup: Look for any remaining chunk files with the split pattern
+    try:
+        # Use the original file name as base for pattern matching
+        base_name = original_file_path.stem
+        
+        # Look for files that match the split pattern
+        split_pattern = f"{base_name}{Config.SPLIT_AUDIO_SUFFIX_PREFIX}"
+        console.print(f"[cyan]Checking for additional split files with pattern: {split_pattern}*[/cyan]")
+        
+        additional_cleaned = 0
+        for file in directory.glob(f"{split_pattern}*"):
+            if any(file.name.endswith(suffix) for suffix in suffixes_to_remove):
+                try:
+                    file.unlink()
+                    console.print(f"    ✓ Additional cleanup: {file}")
+                    additional_cleaned += 1
+                except OSError as e:
+                    console.print(f"[yellow]    ✗ Error deleting {file}: {e}[/yellow]")
+        
+        if additional_cleaned > 0:
+            console.print(f"[green]Additional cleanup: {additional_cleaned} more files cleaned[/green]")
+    except Exception as e:
+        console.print(f"[yellow]Error during additional cleanup: {e}[/yellow]")
 
 # Main function to process a media file
 async def process_media_file(file_path: Path):
@@ -212,44 +449,42 @@ async def process_media_file(file_path: Path):
         return
 
     base_task_id = str(uuid.uuid1())
-    temp_audio_path_stem = file_path.with_name(file_path.name + Config.TEMP_AUDIO_SUFFIX).stem
-    stems_to_cleanup = [temp_audio_path_stem] # Store stems for cleanup
+    stems_to_cleanup = [] # Store stems for cleanup
 
     try:
-        # 1. Extract Audio
-        # The actual temp audio path is needed for extraction
-        actual_temp_audio_path = Path(str(temp_audio_path_stem) + ".wav") 
-        if not extract_audio_with_ffmpeg(file_path, actual_temp_audio_path):
-            console.print(f"[bold red]Audio extraction failed for {file_path}.[/bold red]")
-            return
-
-        duration = get_media_duration_ffprobe(actual_temp_audio_path)
+        # Get media duration directly from the original file
+        duration = get_media_duration_ffprobe(file_path)
         if duration is None:
-            console.print(f"[bold red]Could not get duration for {actual_temp_audio_path}.[/bold red]")
+            console.print(f"[bold red]Could not get duration for {file_path}[/bold red]")
             return
         
-        console.print(f"Original audio duration: {duration:.2f}s")
+        console.print(f"Original media duration: {duration:.2f}s")
 
-        # 2. Split if necessary
+        # Direct audio splitting from media file (optimized path)
         audio_chunks_to_transcribe: List[Path] = []
         if duration > Config.SPLIT_DURATION_SECONDS:
-            console.print(f"Duration exceeds split threshold ({Config.SPLIT_DURATION_SECONDS}s). Splitting audio.")
-            split_chunks = split_audio_moviepy(actual_temp_audio_path, Config.SPLIT_DURATION_SECONDS)
+            console.print(f"Duration exceeds split threshold ({Config.SPLIT_DURATION_SECONDS}s). Splitting audio directly from media.")
+            split_chunks = split_media_audio_ffmpeg(file_path, Config.SPLIT_DURATION_SECONDS)
             if split_chunks:
                 audio_chunks_to_transcribe.extend(split_chunks)
                 # Add stems of split chunks for cleanup
                 stems_to_cleanup.extend([p.stem for p in split_chunks])
             else:
-                console.print(f"[bold red]Audio splitting failed for {actual_temp_audio_path}.[/bold red]")
-                # Cleanup the main temp audio file if splitting failed
-                cleanup_intermediate_files_by_stems(stems_to_cleanup) # Use new cleanup function
+                console.print(f"[bold red]Direct audio splitting failed for {file_path}[/bold red]")
                 return
         else:
-            console.print("Duration within threshold. Processing as a single chunk.")
+            console.print("Duration within threshold. Extracting audio as single chunk.")
+            # For short files, extract the entire audio
+            temp_audio_path_stem = file_path.with_name(file_path.name + Config.TEMP_AUDIO_SUFFIX).stem
+            actual_temp_audio_path = Path(str(temp_audio_path_stem) + ".wav")
+            stems_to_cleanup.append(temp_audio_path_stem)
+            
+            if not extract_audio_with_ffmpeg(file_path, actual_temp_audio_path):
+                console.print(f"[bold red]Audio extraction failed for {file_path}[/bold red]")
+                return
             audio_chunks_to_transcribe.append(actual_temp_audio_path)
-            # The stem for cleanup is already temp_audio_path_stem
         
-        # 3. Transcribe Chunks
+        # Transcribe Chunks
         transcribed_chunk_txts: List[Path] = []
         transcribed_chunk_srts: List[Path] = []
         for i, chunk_path in enumerate(audio_chunks_to_transcribe):
@@ -258,20 +493,25 @@ async def process_media_file(file_path: Path):
                 txt_file, srt_file = result
                 transcribed_chunk_txts.append(txt_file)
                 transcribed_chunk_srts.append(srt_file)
-                # Stems for these are already in stems_to_cleanup from split_chunks or temp_audio_path_stem
             else:
                 console.print(f"[bold red]Failed to transcribe chunk {chunk_path.name}. Aborting merge for {file_path.name}.[/bold red]")
-                # Decide if we should cleanup and exit, or try to merge what we have.
-                # For now, let's cleanup and exit.
-                cleanup_intermediate_files_by_stems(stems_to_cleanup) # Use new cleanup function
+                cleanup_intermediate_files_by_stems(stems_to_cleanup, file_path)
                 return
         
-        # 4. Merge Results
+        # Merge Results
         if len(audio_chunks_to_transcribe) > 1: # Only merge if it was split
             if transcribed_chunk_txts:
                 merge_txt_files(file_path, transcribed_chunk_txts)
             if transcribed_chunk_srts:
                 correct_and_merge_srt_files(file_path, transcribed_chunk_srts)
+            
+            # After merging, add all intermediate chunk files to cleanup list
+            for chunk_path in audio_chunks_to_transcribe:
+                chunk_stem = chunk_path.stem
+                if chunk_stem not in stems_to_cleanup:
+                    stems_to_cleanup.append(chunk_stem)
+            
+            console.print(f"Added {len(audio_chunks_to_transcribe)} chunk stems to cleanup list")
         else: # Single chunk, just rename output files to final names
             if transcribed_chunk_txts:
                 try:
@@ -289,5 +529,5 @@ async def process_media_file(file_path: Path):
         console.print(f"[green][Process Media File] Successfully completed for: {file_path}[/green]")
 
     finally:
-        # 5. Cleanup
-        cleanup_intermediate_files_by_stems(stems_to_cleanup)
+        # Cleanup
+        cleanup_intermediate_files_by_stems(stems_to_cleanup, file_path)

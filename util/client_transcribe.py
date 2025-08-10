@@ -53,6 +53,9 @@ async def transcribe_send(file: Path):
     ]
     process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     console.print(f'    正在提取音频', end='\r')
+    if process.stdout is None:
+        console.print("\n[bold red]错误：无法启动 FFmpeg 进程以提取音频。[/bold red]")
+        return
     data = process.stdout.read()
     audio_duration = len(data) / 4 / 16000
     console.print(f'    音频长度：{audio_duration:.2f}s')
@@ -86,12 +89,45 @@ async def transcribe_recv(file: Path):
     # 获取连接
     websocket = Cosmic.websocket
 
-    # 接收结果
-    async for message in websocket:
-        message = json.loads(message)
-        console.print(f'    转录进度: {message["duration"]:.2f}s', end='\r')
-        if message['is_final']:
-            break
+    # 接收结果，并添加超时机制
+    message = None
+    try:
+        # 设置一个较长的超时时间，例如按音频时长的比例计算，或一个固定的较大值
+        # 例如：每分钟音频给60秒超时，至少300秒
+        # 我们这里先用一个固定的大超时值，比如 2 小时 (7200秒)
+        # 因为文件可能很长。
+        timeout_seconds = 7200 
+
+        async def receive_messages():
+            nonlocal message
+            async for msg in websocket:
+                parsed_msg = json.loads(msg)
+                console.print(f'    转录进度: {parsed_msg["duration"]:.2f}s', end='\r')
+                if parsed_msg['is_final']:
+                    message = parsed_msg # 将最终消息赋值给外部变量
+                    return # 结束此内部协程
+
+        await asyncio.wait_for(receive_messages(), timeout=timeout_seconds)
+
+    except asyncio.TimeoutError:
+        console.print("\n[bold red]错误：从服务器接收结果超时。服务器可能已停止响应。[/bold red]")
+        # 可以选择在这里关闭websocket或执行其他清理操作
+        if Cosmic.websocket:
+            await Cosmic.websocket.close()
+        return # 提前退出函数
+    except websockets.exceptions.ConnectionClosed as e:
+        console.print(f"\n[bold red]错误：WebSocket 连接意外关闭: {e}[/bold red]")
+        # Connection is already closed, no need to close again.
+        return
+    except Exception as e:
+        console.print(f"\n[bold red]错误：接收结果时发生未知错误: {e}[/bold red]")
+        if Cosmic.websocket:
+            await Cosmic.websocket.close()
+        return
+
+    if message is None:
+        console.print("\n[bold red]错误：未能从服务器接收到最终消息。[/bold red]")
+        return
 
     # 解析结果
     text_merge = message['text']
