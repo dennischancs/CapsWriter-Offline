@@ -33,6 +33,26 @@ class ClientConfig:
 
     trash_punc = '，。,.'        # 识别结果要消除的末尾标点
 
+    # Media file splitting and processing settings
+    SPLIT_DURATION_SECONDS = 2 * 60 * 60  # Duration in seconds to split media files (2 hours)
+    # SPLIT_DURATION_SECONDS = 30  # 测试用
+    TEMP_AUDIO_SUFFIX = "_temp_audio.wav"   # Suffix for temporary extracted audio files
+    SPLIT_AUDIO_SUFFIX_PREFIX = "_part_"    # Prefix for split audio chunk files (e.g., filename_part_0.wav)
+
+    # FFmpeg command template for audio extraction.
+    # Uses -async 1 for sync correction and -rf64 auto for large WAV file support.
+    # The input file path and output file path will be inserted.
+    FFMPEG_AUDIO_EXTRACTION_CMD_TEMPLATE = [
+        "ffmpeg",
+        "-i", "{input_file}",  # Placeholder for input file
+        "-vn",                 # No video
+        "-acodec", "pcm_s16le",# Audio codec
+        "-async", "1",         # Resync audio
+        "-rf64", "auto",       # Auto RF64 for large WAVs
+        "-y",                  # Overwrite output file if it exists
+        "{output_file}"        # Placeholder for output file
+    ]
+
     hot_zh = True               # 是否启用中文热词替换，中文热词存储在 hot_zh.txt 文件里
     多音字 = True                  # True 表示多音字匹配
     声调  = False                 # False 表示忽略声调区别，这样「黄章」就能匹配「慌张」
@@ -63,5 +83,3 @@ class ParaformerArgs:
     feature_dim = 80
     decoding_method = 'greedy_search'
     debug = False
-
-

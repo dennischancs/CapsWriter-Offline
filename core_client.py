@@ -24,6 +24,7 @@ from util.client_hot_update import update_hot_all, observe_hot
 
 from util.client_transcribe import transcribe_check, transcribe_send, transcribe_recv
 from util.client_adjust_srt import adjust_srt
+from util.client_transcribe_advanced import process_media_file
 
 from util.empty_working_set import empty_current_working_set
 
@@ -35,11 +36,13 @@ colorama.init()
 
 # MacOS 的权限设置
 if system() == 'Darwin' and not sys.argv[1:]:
-    if os.getuid() != 0:
+    # These functions are only available on Unix-like systems
+    import pwd # Ensure pwd is imported for getuid context, though not directly used here
+    if os.getuid() != 0: # type: ignore
         print('在 MacOS 上需要以管理员启动客户端才能监听键盘活动，请 sudo 启动')
         input('按回车退出'); sys.exit()
     else:
-        os.umask(0o000)
+        os.umask(0o000) # type: ignore
 
 
 async def main_mic():
@@ -79,12 +82,12 @@ async def main_file(files: List[Path]):
     for file in files:
         if file.suffix in ['.txt', '.json', 'srt']:
             adjust_srt(file)
-        else:
-            await transcribe_check(file)
-            await asyncio.gather(
-                transcribe_send(file),
-                transcribe_recv(file)
-            )
+        else: # Process media files with the new advanced logic
+            try:
+                await process_media_file(file) # Call the new async function
+            except Exception as e:
+                console.print(f"[bold red]An unexpected error occurred while processing {file}: {e}[/bold red]")
+                # Optionally, continue to the next file or re-raise if critical
 
     if Cosmic.websocket:
         await Cosmic.websocket.close()
@@ -104,8 +107,25 @@ def init_file(files: List[Path]):
     """
     用 CapsWriter Server 转录音视频文件，生成 srt 字幕
     """
+    files_to_process = []
+    for item in files:
+        if item.is_dir():
+            console.print(f"[bold blue]Processing directory: {item}[/bold blue]")
+            for sub_item in item.iterdir():
+                if sub_item.is_file(): # Ensure we only process files
+                    files_to_process.append(sub_item)
+        elif item.is_file():
+            files_to_process.append(item)
+        else:
+            console.print(f"[bold yellow]Warning: {item} is not a valid file or directory. Skipping.[/bold yellow]")
+    
+    if not files_to_process:
+        console.print("[bold red]No files to process. Exiting.[/bold red]")
+        input('按回车退出\n')
+        return
+
     try:
-        asyncio.run(main_file(files))
+        asyncio.run(main_file(files_to_process))
     except KeyboardInterrupt:
         console.print(f'再见！')
         sys.exit()
