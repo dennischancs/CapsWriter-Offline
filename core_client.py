@@ -29,6 +29,8 @@ from util.client_transcribe_advanced import process_media_file
 from util.empty_working_set import empty_current_working_set
 
 # 确保根目录位置正确，用相对路径加载模型
+ORIGINAL_CWD = os.getcwd() # Capture the original CWD before changing it
+USER_CWD = os.getcwd() # Capture the user's current working directory (where command is run)
 BASE_DIR = os.path.dirname(__file__); os.chdir(BASE_DIR)
 
 # 确保终端能使用 ANSI 控制字符
@@ -109,15 +111,26 @@ def init_file(files: List[Path]):
     """
     files_to_process = []
     for item in files:
-        if item.is_dir():
-            console.print(f"[bold blue]Processing directory: {item}[/bold blue]")
-            for sub_item in item.iterdir():
+        # Convert relative path to absolute path first
+        if not item.is_absolute():
+            # Use USER_CWD which captures the user's current working directory where the command is run
+            # This is captured before any directory changes occur in the script
+            current_cwd = Path(USER_CWD)
+            abs_item = (current_cwd / item).resolve()
+        else:
+            abs_item = item.resolve()
+        
+        console.print(f"[dim]Resolved path: {item} -> {abs_item}[/dim]")
+        
+        if abs_item.is_dir():
+            console.print(f"[bold blue]Processing directory: {abs_item}[/bold blue]")
+            for sub_item in abs_item.iterdir():
                 if sub_item.is_file(): # Ensure we only process files
                     files_to_process.append(sub_item)
-        elif item.is_file():
-            files_to_process.append(item)
+        elif abs_item.is_file():
+            files_to_process.append(abs_item)
         else:
-            console.print(f"[bold yellow]Warning: {item} is not a valid file or directory. Skipping.[/bold yellow]")
+            console.print(f"[bold yellow]Warning: {abs_item} is not a valid file or directory. Skipping.[/bold yellow]")
     
     if not files_to_process:
         console.print("[bold red]No files to process. Exiting.[/bold red]")

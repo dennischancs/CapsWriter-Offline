@@ -475,14 +475,14 @@ async def process_media_file(file_path: Path):
         else:
             console.print("Duration within threshold. Extracting audio as single chunk.")
             # For short files, extract the entire audio
-            temp_audio_path_stem = file_path.with_name(file_path.name + Config.TEMP_AUDIO_SUFFIX).stem
-            actual_temp_audio_path = Path(str(temp_audio_path_stem) + ".wav")
-            stems_to_cleanup.append(temp_audio_path_stem)
+            # Ensure temp audio file is created in the same directory as the original file
+            temp_audio_path = file_path.parent / (file_path.stem + Config.TEMP_AUDIO_SUFFIX)
+            stems_to_cleanup.append(temp_audio_path.stem)
             
-            if not extract_audio_with_ffmpeg(file_path, actual_temp_audio_path):
+            if not extract_audio_with_ffmpeg(file_path, temp_audio_path):
                 console.print(f"[bold red]Audio extraction failed for {file_path}[/bold red]")
                 return
-            audio_chunks_to_transcribe.append(actual_temp_audio_path)
+            audio_chunks_to_transcribe.append(temp_audio_path)
         
         # Transcribe Chunks
         transcribed_chunk_txts: List[Path] = []

@@ -135,10 +135,13 @@ async def transcribe_recv(file: Path):
     timestamps = message['timestamps']
     tokens = message['tokens']
 
-    # 得到文件名
-    json_filename = Path(file).with_suffix(".json")
-    txt_filename = Path(file).with_suffix(".txt")
-    merge_filename = Path(file).with_suffix(".merge.txt")
+    # 得到文件名 - 确保输出文件与输入文件在同一目录
+    file_path = Path(file)
+    json_filename = file_path.with_suffix(".json")
+    txt_filename = file_path.with_suffix(".txt")
+    merge_filename = file_path.with_suffix(".merge.txt")
+    
+    console.print(f"[dim]Output files will be saved in: {file_path.parent}[/dim]")
 
     # 写入结果
     with open(merge_filename, "w", encoding="utf-8") as f:
