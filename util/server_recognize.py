@@ -17,8 +17,13 @@ results = {}
 def format_text(text, punc_model):
     if Config.format_spell:
         text = adjust_space(text)       # 调空格
+    # 检查 punc_model 是否已加载且可用
     if Config.format_punc and punc_model and text:
         text = punc_model(text)[0]  # 加标点
+    # else:
+    #     # 可选：在模型未加载时打印提示，但会频繁输出，可能造成干扰
+    #     if Config.format_punc and text and not punc_model:
+    #         console.print("[dim](Punctuation model not ready, skipping punctuation.)[/dim]")
     if Config.format_num:
         text = chinese_to_num(text)     # 转数字
     if Config.format_spell:
