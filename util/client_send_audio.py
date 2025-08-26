@@ -15,7 +15,7 @@ import uuid
 
 async def send_message(message):
     # 发送数据
-    if Cosmic.websocket is None or Cosmic.websocket.closed:
+    if Cosmic.websocket is None or Cosmic.websocket.state.name != 'OPEN':
         if message['is_final']:
             Cosmic.audio_files.pop(message['task_id'])
             console.print('    服务端未连接，无法发送\n')
@@ -72,7 +72,7 @@ async def send_audio():
 
                 # 保存音频至本地文件
                 duration += len(data) / 48000
-                if Config.save_audio:
+                if Config.save_audio and file is not None:
                     write_file(file, data)
 
                 # 发送音频数据用于识别
@@ -91,7 +91,7 @@ async def send_audio():
                 task = asyncio.create_task(send_message(message))
             elif task['type'] ==  'finish':
                 # 完成写入本地文件
-                if Config.save_audio:
+                if Config.save_audio and file is not None:
                     finish_file(file)
 
                 console.print(f'任务标识：{task_id}')
