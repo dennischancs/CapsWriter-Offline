@@ -110,6 +110,15 @@ def init_file(files: List[Path]):
     用 CapsWriter Server 转录音视频文件，生成 srt 字幕
     """
     files_to_process = []
+    
+    def scan_directory_recursive(directory: Path):
+        """递归扫描目录及其子目录中的所有文件"""
+        console.print(f"[bold blue]Processing directory: {directory}[/bold blue]")
+        for item in directory.rglob('*'):
+            if item.is_file():
+                console.print(f"[dim]Found file: {item}[/dim]")
+                files_to_process.append(item)
+    
     for item in files:
         # Convert relative path to absolute path first
         if not item.is_absolute():
@@ -123,10 +132,7 @@ def init_file(files: List[Path]):
         console.print(f"[dim]Resolved path: {item} -> {abs_item}[/dim]")
         
         if abs_item.is_dir():
-            console.print(f"[bold blue]Processing directory: {abs_item}[/bold blue]")
-            for sub_item in abs_item.iterdir():
-                if sub_item.is_file(): # Ensure we only process files
-                    files_to_process.append(sub_item)
+            scan_directory_recursive(abs_item)
         elif abs_item.is_file():
             files_to_process.append(abs_item)
         else:
