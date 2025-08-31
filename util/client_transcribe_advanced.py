@@ -437,9 +437,72 @@ def cleanup_intermediate_files_by_stems(stems_to_remove: List[str], original_fil
     except Exception as e:
         console.print(f"[yellow]Error during additional cleanup: {e}[/yellow]")
 
+# Helper to clean up existing temp audio files before starting a new transcription
+def cleanup_existing_temp_files(file_path: Path):
+    """
+    Clean up any existing temp audio files that might be left from interrupted tasks.
+    This prevents processing old temp files instead of the intended media file.
+    """
+    console.print(f"[cyan][Cleanup] Checking for existing temp files before processing: {file_path}[/cyan]")
+    
+    # Get the directory and base name of the original file
+    directory = file_path.parent
+    base_name = file_path.stem
+    
+    # Define the temp audio file pattern to look for
+    temp_audio_patterns = [
+        f"{base_name}{Config.TEMP_AUDIO_SUFFIX}",  # Original temp file pattern
+        f"{base_name}_temp_audio_temp_audio.wav",  # Nested temp file pattern (the problematic case)
+    ]
+    
+    cleaned_count = 0
+    error_count = 0
+    
+    for temp_pattern in temp_audio_patterns:
+        temp_file_path = directory / temp_pattern
+        try:
+            if temp_file_path.exists():
+                console.print(f"[yellow]Found existing temp file: {temp_file_path}[/yellow]")
+                os.remove(temp_file_path)
+                console.print(f"[green]✓ Removed existing temp file: {temp_file_path}[/green]")
+                cleaned_count += 1
+            else:
+                console.print(f"[dim]No temp file found at: {temp_file_path}[/dim]")
+        except OSError as e:
+            console.print(f"[bold red]✗ Error removing temp file {temp_file_path}: {e}[/bold red]")
+            error_count += 1
+    
+    # Also check for any other problematic temp files that might have been created
+    # Look for files that start with the temp audio pattern
+    try:
+        temp_prefix = f"{base_name}{Config.TEMP_AUDIO_SUFFIX}"
+        for temp_file in directory.glob(f"{temp_prefix}*"):
+            if temp_file.name != Config.TEMP_AUDIO_SUFFIX.lstrip("_"):  # Avoid removing unrelated temp files
+                try:
+                    console.print(f"[yellow]Found additional temp-related file: {temp_file}[/yellow]")
+                    os.remove(temp_file)
+                    console.print(f"[green]✓ Removed additional temp file: {temp_file}[/green]")
+                    cleaned_count += 1
+                except OSError as e:
+                    console.print(f"[bold red]✗ Error removing additional temp file {temp_file}: {e}[/bold red]")
+                    error_count += 1
+    except Exception as e:
+        console.print(f"[yellow]Error during additional temp file cleanup: {e}[/yellow]")
+    
+    if cleaned_count > 0:
+        console.print(f"[green][Cleanup] Successfully removed {cleaned_count} temp file(s)[/green]")
+    elif error_count == 0:
+        console.print(f"[dim][Cleanup] No existing temp files found[/dim]")
+    
+    if error_count > 0:
+        console.print(f"[bold red][Cleanup] {error_count} error(s) occurred during cleanup[/bold red]")
+
 # Main function to process a media file
 async def process_media_file(file_path: Path):
     console.print(f"\n[cyan][Process Media File] Starting for: {file_path}[/cyan]")
+    
+    # Clean up any existing temp files before starting
+    cleanup_existing_temp_files(file_path)
     
     final_srt_path = file_path.with_suffix(".srt")
     final_txt_path = file_path.with_suffix(".txt")
