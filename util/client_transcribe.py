@@ -94,9 +94,9 @@ async def transcribe_recv(file: Path):
     try:
         # 设置一个较长的超时时间，例如按音频时长的比例计算，或一个固定的较大值
         # 例如：每分钟音频给60秒超时，至少300秒
-        # 我们这里先用一个固定的大超时值，比如 2 小时 (7200秒)
-        # 因为文件可能很长。
-        timeout_seconds = 7200 
+        # 我们这里先用一个固定的大超时值，比如 4 小时 (14400秒)
+        # 因为文件可能很长，特别是2小时的音频块。
+        timeout_seconds = 14400 
 
         async def receive_messages():
             nonlocal message
@@ -107,7 +107,34 @@ async def transcribe_recv(file: Path):
                     message = parsed_msg # 将最终消息赋值给外部变量
                     return # 结束此内部协程
 
-        await asyncio.wait_for(receive_messages(), timeout=timeout_seconds)
+        # 创建一个任务来接收消息
+        receive_task = asyncio.create_task(receive_messages())
+        
+        # 创建一个任务来定期发送ping (每30秒一次)
+        async def send_periodic_pings():
+            while not receive_task.done():
+                try:
+                    await asyncio.sleep(30)  # 每30秒发送一次ping
+                    if websocket.state.name == 'OPEN' and not receive_task.done():
+                        await websocket.ping()
+                        console.print('[dim]    发送keepalive ping[/dim]', end='\r')
+                except Exception as e:
+                    console.print(f'[yellow]    Ping发送失败: {e}[/yellow]')
+                    break
+        
+        ping_task = asyncio.create_task(send_periodic_pings())
+        
+        try:
+            # 等待接收消息任务完成，但有超时
+            await asyncio.wait_for(receive_task, timeout=timeout_seconds)
+        finally:
+            # 取消ping任务
+            if not ping_task.done():
+                ping_task.cancel()
+                try:
+                    await ping_task
+                except asyncio.CancelledError:
+                    pass
 
     except asyncio.TimeoutError:
         console.print("\n[bold red]错误：从服务器接收结果超时。服务器可能已停止响应。[/bold red]")

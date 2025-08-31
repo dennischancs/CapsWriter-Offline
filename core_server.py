@@ -47,9 +47,13 @@ async def main():
     # 负责接收客户端数据的 coroutine
     recv = websockets.serve(ws_recv,
                             Config.addr,
-                            Config.port,
-                            subprotocols=["binary"],
-                            max_size=None)
+                            int(Config.port),
+                            subprotocols=[websockets.Subprotocol("binary")],
+                            max_size=None,
+                            ping_interval=20,        # Send ping every 20 seconds
+                            ping_timeout=60,         # Wait 60 seconds for pong response
+                            close_timeout=1,         # Timeout for graceful close
+                            max_queue=1024)          # Maximum message queue size
 
     # 负责发送结果的 coroutine
     send = ws_send()

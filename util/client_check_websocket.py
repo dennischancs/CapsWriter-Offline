@@ -26,7 +26,16 @@ async def check_websocket() -> bool:
         return True
     for _ in range(3):
         with Handler():
-            Cosmic.websocket = await websockets.connect(f"ws://{Config.addr}:{Config.port}", max_size=None, subprotocols=[Subprotocol("binary")])
+            # Configure WebSocket with extended keepalive settings
+            Cosmic.websocket = await websockets.connect(
+                f"ws://{Config.addr}:{Config.port}", 
+                max_size=None, 
+                subprotocols=[Subprotocol("binary")],
+                ping_interval=20,        # Send ping every 20 seconds
+                ping_timeout=60,         # Wait 60 seconds for pong response
+                close_timeout=1,         # Timeout for graceful close
+                max_queue=1024           # Maximum message queue size
+            )
             return True
     else:
         return False
