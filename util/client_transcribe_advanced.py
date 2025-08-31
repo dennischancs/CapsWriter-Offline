@@ -384,8 +384,8 @@ def cleanup_intermediate_files_by_stems(stems_to_remove: List[str], original_fil
         stem_cleaned = 0
         stem_errors = 0
         
-        # Extract just the stem name (without path)
-        stem_name = Path(stem_str).stem
+        # stem_str is already the stem name, use it directly
+        stem_name = stem_str
         
         console.print(f"    Stem name: {stem_name}")
         
