@@ -67,7 +67,7 @@ class ClientConfig:
     file_seg_duration = 25           # 转录文件时分段长度
     file_seg_overlap = 2             # 转录文件时分段重叠
 
-    boot_auto_start = True           # 是否开机自启 core_client
+    boot_auto_start = False           # 是否开机自启 core_client, 默认关闭
 
 
 class ModelPaths:
