@@ -112,10 +112,33 @@ def start_core_server():
         console.print(f"[bold red]Error starting {process_name}: {e}[/bold red]")
 
 def configure_boot_auto_start(enable: bool):
-    """配置开机自启"""
+    """配置开机自启 - 仅使用注册表方式"""
     current_system = system()
-    client_path = Path(BASE_DIR) / 'core_client.py'
-    python_executable = sys.executable
+    
+    # 检测运行环境并确定正确的启动路径
+    is_compiled = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+    app_exe_path = None
+    client_path = None
+    python_executable = None
+    startup_command = None
+    working_dir = str(BASE_DIR)
+    
+    if is_compiled:
+        # 编译环境：使用 start_client.exe
+        app_exe_path = Path(BASE_DIR) / 'start_client.exe'
+        startup_command = f'"{app_exe_path}"'
+        console.print(f"[dim]检测到编译环境，使用: {app_exe_path}[/dim]")
+    else:
+        # 开发环境：使用 core_client.py
+        client_path = Path(BASE_DIR) / 'core_client.py'
+        python_executable = sys.executable
+        pythonw_executable = python_executable.replace("python.exe", "pythonw.exe")
+        
+        if Path(pythonw_executable).exists():
+            startup_command = f'"{pythonw_executable}" "{client_path}"'
+        else:
+            startup_command = f'"{python_executable}" "{client_path}"'
+        console.print(f"[dim]检测到开发环境，使用: {startup_command}[/dim]")
 
     if current_system == 'Windows':
         import winreg
@@ -123,21 +146,45 @@ def configure_boot_auto_start(enable: bool):
         app_name = "CapsWriter-Offline-Client"
 
         try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
             if enable:
-                # 构造启动命令，使用 pythonw.exe 避免弹出控制台
-                cmd = f'"{python_executable.replace("python.exe", "pythonw.exe")}" "{client_path}"'
-                if not Path(python_executable.replace("python.exe", "pythonw.exe")).exists():
-                    cmd = f'"{python_executable}" "{client_path}"'
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, cmd)
-                console.print(f"[bold green]已配置开机自启: {app_name}[/bold green]")
+                # 处理注册表方式
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+                
+                # 验证启动路径是否存在
+                if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') and app_exe_path is not None:
+                    if not app_exe_path.exists():
+                        console.print(f"[bold red]可执行文件不存在: {app_exe_path}[/bold red]")
+                        winreg.CloseKey(key)
+                        return
+                
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, startup_command)
+                console.print(f"[bold green]已配置注册表开机自启: {app_name}[/bold green]")
+                console.print(f"[dim]启动命令: {startup_command}[/dim]")
+                winreg.CloseKey(key)
+            
             else:
+                # 禁用自启，清理注册表
                 try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
                     winreg.DeleteValue(key, app_name)
-                    console.print(f"[bold yellow]已取消开机自启: {app_name}[/bold yellow]")
+                    winreg.CloseKey(key)
+                    console.print(f"[bold yellow]已取消注册表开机自启: {app_name}[/bold yellow]")
                 except FileNotFoundError:
-                    console.print(f"[dim]开机自启项未找到: {app_name}[/dim]")
-            winreg.CloseKey(key)
+                    console.print(f"[dim]注册表开机自启项未找到: {app_name}[/dim]")
+                except Exception as e:
+                    console.print(f"[yellow]清理注册表失败: {e}[/yellow]")
+            
+            # 清理之前创建的启动文件
+            cleanup_files = ['start_client.bat', 'start_client.vbs']
+            for cleanup_file in cleanup_files:
+                file_path = Path(BASE_DIR) / cleanup_file
+                try:
+                    if file_path.exists():
+                        file_path.unlink()
+                        console.print(f"[dim]已清理启动文件: {cleanup_file}[/dim]")
+                except Exception as e:
+                    console.print(f"[yellow]清理启动文件失败 {cleanup_file}: {e}[/yellow]")
+                    
         except PermissionError:
             console.print("[bold red]权限不足，请以管理员身份运行以修改开机自启设置。[/bold red]")
         except Exception as e:
@@ -146,6 +193,10 @@ def configure_boot_auto_start(enable: bool):
     elif current_system == 'Linux':
         # 使用 systemd user units
         # 需要用户手动执行: systemctl --user enable/disable capswriter-client.service
+        if python_executable is None or client_path is None:
+            console.print("[bold red]Linux 环境下自启动配置失败：缺少必要的路径信息[/bold red]")
+            return
+            
         service_content = f"""[Unit]
 Description=CapsWriter Offline Client
 After=network.target
@@ -184,6 +235,10 @@ WantedBy=default.target
 
     elif current_system == 'Darwin': # macOS
         # 使用 launchd agent
+        if python_executable is None or client_path is None:
+            console.print("[bold red]macOS 环境下自启动配置失败：缺少必要的路径信息[/bold red]")
+            return
+            
         plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -348,7 +403,7 @@ def init_file(files: List[Path]):
             else:
                 files_to_process.append(abs_item)
         else:
-            console.print(f"[bold yellow]Warning: {abs_item} is not a valid file or directory. Skipping.[/bold yellow]")
+            console.print(f"[bold yellow]Warning: {abs_item} is not a valid file or directory. Skipping.[/yellow]")
     
     if not files_to_process:
         console.print("[bold red]No files to process. Exiting.[/bold red]")
