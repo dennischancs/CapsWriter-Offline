@@ -8,11 +8,30 @@
 import sys
 from pathlib import Path
 
+import psutil
+
 from config_server import ServerConfig as Config
 from config_server import ModelPaths, ModelDownloadLinks
 from core.server.state import console
 from . import logger
 
+
+def mlx_required_dirs(model_type, platform, model_backend, preference='auto', total_memory=0):
+    """Darwin 的 MLX 路径要检查权重目录。Windows 和 onnx 退路返回 None，沿用原来的文件列表。"""
+    from core.server.engines.factory import EngineFactory
+
+    model_type = (model_type or '').lower()
+    if not EngineFactory.use_mlx_backend(platform, model_backend, model_type):
+        return None
+    if model_type == 'sensevoice':
+        return [ModelPaths.mlx_sensevoice_dir]
+    if model_type == 'fun_asr_nano':
+        return [ModelPaths.mlx_fun_asr_dir]
+    if model_type == 'qwen_asr':
+        from core.server.engines.mlx.variant import select_qwen_variant
+        _, _, dirname = select_qwen_variant(preference, total_memory)
+        return [ModelPaths.mlx_dir / dirname]
+    return None
 
 
 def check_model() -> None:
@@ -26,6 +45,29 @@ def check_model() -> None:
     """
     model_type = Config.model_type.lower()
     logger.debug(f"检查模型文件, 类型: {model_type}")
+
+    mlx_dirs = mlx_required_dirs(
+        model_type,
+        sys.platform,
+        getattr(Config, 'model_backend', 'auto'),
+        getattr(Config, 'qwen_mlx_variant', 'auto'),
+        int(psutil.virtual_memory().total),
+    )
+    if mlx_dirs is not None:
+        missing_files = [path for path in mlx_dirs if not path.exists()]
+        if missing_files:
+            logger.error('缺少 MLX 权重目录: %s' % ', '.join(str(path) for path in missing_files))
+            console.print(
+                '[bold red]缺少 MLX 权重目录[/bold red]\n\n'
+                + '\n'.join(str(path) for path in missing_files)
+                + '\n\n不是 ONNX / GGUF 文件缺失。',
+                style='bright_red',
+            )
+            input('按回车退出')
+            sys.exit(1)
+        logger.info(f"模型文件检查通过 ({model_type}, mlx)")
+        console.print(f'[green4]模型文件检查通过 ({model_type}, mlx)', end='\n\n')
+        return
 
     # 根据模型类型确定需要检查的文件
     if model_type == 'fun_asr_nano':

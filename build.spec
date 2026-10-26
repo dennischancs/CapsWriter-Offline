@@ -10,6 +10,16 @@ from os.path import join, basename, dirname, exists
 from os import walk, makedirs
 from shutil import copyfile, rmtree
 
+from build_support import (
+    exclude_accel_binary,
+    exe_icon,
+    hiddenimports_for,
+    ensure_darwin_mlx_runtime,
+    link_runtime_folders,
+    skip_collected_data,
+    use_upx,
+)
+
 # ==================== 打包配置选项 ====================
 
 # 是否收集 CUDA provider
@@ -35,10 +45,10 @@ try:
         filtered_datas = []
         for src, dest in sherpa_datas:
             # 检查是否是 CUDA provider 相关文件
-            if 'providers_cuda' not in basename(src).lower():
+            if not skip_collected_data(src):
                 filtered_datas.append((src, dest))
             else:
-                print(f"[INFO] 排除 CUDA provider: {basename(src)}")
+                print(f"[INFO] 排除加速 provider: {basename(src)}")
         sherpa_datas = filtered_datas
 
     datas += sherpa_datas
@@ -77,6 +87,10 @@ hiddenimports += [
     'pystray',       # 托盘图标库
 ]
 
+hiddenimports = hiddenimports_for(hiddenimports)
+_USE_UPX = use_upx()
+_ICON = exe_icon()
+
 # # 对所有模块用 .py 源码而非 .pyc（猴子补丁 _get_module_collection_mode）
 # import PyInstaller.building.build_main as _bm
 # _bm._get_module_collection_mode = lambda md, n, na=False: _bm._ModuleCollectionMode.PY
@@ -113,11 +127,11 @@ for name, src, type in a_1.binaries:
         'onnxruntime_providers_cuda.dll' in name.lower() 
     )
 
-    if not is_system_cuda_dll and not is_unwanted_onnx_dll:
-        filtered_binaries.append((name, src, type))
-    else:
-        reason = "环境 CUDA DLL" if is_system_cuda_dll else "冗余 ONNX DLL"
+    if exclude_accel_binary(name, src) or is_system_cuda_dll or is_unwanted_onnx_dll:
+        reason = "环境 CUDA DLL" if is_system_cuda_dll else "冗余 ONNX / DirectML"
         print(f"[INFO] 排除 {reason}: {name} (从 {src} 收集)")
+    else:
+        filtered_binaries.append((name, src, type))
 a_1.binaries = filtered_binaries
 
 a_2 = Analysis(
@@ -150,11 +164,11 @@ for name, src, type in a_2.binaries:
         'directml.dll' in name.lower()
     )
 
-    if not is_system_cuda_dll and not is_unwanted_onnx_dll:
-        filtered_binaries.append((name, src, type))
-    else:
-        reason = "环境 CUDA DLL" if is_system_cuda_dll else "冗余 ONNX DLL"
+    if exclude_accel_binary(name, src) or is_system_cuda_dll or is_unwanted_onnx_dll:
+        reason = "环境 CUDA DLL" if is_system_cuda_dll else "冗余 ONNX / DirectML"
         print(f"[INFO] 排除 {reason}: {name} (从 {src} 收集)")
+    else:
+        filtered_binaries.append((name, src, type))
 a_2.binaries = filtered_binaries
 
 
@@ -194,14 +208,14 @@ exe_1 = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=_USE_UPX,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets\\\\icon.ico'],
+    icon=_ICON,
     # 所有第三方依赖放入 internal 目录
     contents_directory='internal',
 )
@@ -214,14 +228,14 @@ exe_2 = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=_USE_UPX,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets\\\\icon.ico'],
+    icon=_ICON,
     # 所有第三方依赖放入 internal 目录
     contents_directory='internal',
 )
@@ -236,7 +250,7 @@ coll = COLLECT(
     a_2.datas,
 
     strip=False,
-    upx=True,
+    upx=_USE_UPX,
     upx_exclude=[],
     name='CapsWriter-Offline',
 )
@@ -297,3 +311,7 @@ if system() == 'Windows':
             run(cmd, shell=True, check=True)
         except:
             print(f'警告：无法创建目录连接符 {dest_folder}，请手动创建或复制文件夹')
+
+# Darwin 不走 mklink。缺的目录跳过，已有的链到绝对路径。Windows 列表不动。
+link_runtime_folders(dest_root)
+ensure_darwin_mlx_runtime(dest_root)

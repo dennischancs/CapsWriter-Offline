@@ -252,7 +252,17 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 - `docs/环境依赖安装说明.md` 增加 Mac 的 Python、ffmpeg、权限。
 - `docs/显卡加速的若干问题.md` 增加 MLX / Metal 和 CoreML 退路。DirectML 章节保留。
 
-打包 `.app` 不在这六个阶段里。以后做时要签 dylib，权限从「授给终端」变成「授给 .app」。`build.spec` 里的 CUDA DLL 收集不要套到 Mac 上。
+打包签名公证的 `.app` 仍然不做。权限仍是授给终端，不是授给 `.app`。
+
+2026-10-27 在这台 Mac 上用 `build.spec` 做了本地编译，版本仍是 2.8.0：
+
+- Darwin 关闭 UPX，不传 Windows 的 `assets\\icon.ico`，不把 `keyboard` 当隐藏导入。
+- 不收集 CUDA / DirectML。Windows 的 `mklink` 列表不动。
+- `models`、`assets`、`core`、`LLM`、`docs`、`logs` 链到仓库的绝对路径。没有 `log` 目录就跳过。
+- `check_model` 在 MLX 路径上检查 `models/mlx/` 里的目录。Windows 和 `model_backend=onnx` 仍查原来的 ONNX / GGUF 文件。
+- PyInstaller 会漏掉 `libjaccl.dylib`、`mlx.metallib` 和一部分 MLX Python 文件。`build_support.py` 在收集之后补进 `internal/`。
+- 短跑 `dist/CapsWriter-Offline/start_server` 能过模型检查并写出 `backend=mlx`、`Device(gpu, 0)`。这不是 A1 或 A2。
+
 
 ## 9. llama.cpp Metal 只是应急，不排期
 

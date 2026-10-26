@@ -20,6 +20,7 @@
 - [x] A7. 权重在 `models/mlx/`。断网可以再次启动。目录不存在时，错误写明缺哪个目录，而不是 `kernel32` 或 `windll`。
 - [x] A8. 一条中文音视频经文件转录或 `batch_transcribe.py` 得到非空 `.srt` 和 `.txt`。时间轴单调。日志能看出时间来自对齐器。对齐失败时写明退回按字均分，不把均分说成对齐成功。
 - [x] A9. `model_backend=onnx` 时，SenseVoice 仍能出文本，并尝试 CoreML，失败再退 CPU。Fun-ASR 和 Qwen 不靠这条退路交差。
+- [x] 2.8.0 Darwin 上 `pyinstaller build.spec` 打出 arm64 Mach-O 的 `start_server` 和 `start_client`。运行目录是绝对路径软链接。服务端加载 MLX，日志是 `backend=mlx` 和 GPU。不是签名公证的 `.app`。
 
 ### 不做
 
