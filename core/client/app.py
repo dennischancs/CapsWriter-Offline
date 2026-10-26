@@ -9,6 +9,7 @@ CapsWriter Offline 客户端主程序门面类 (Facade)
 import os
 import sys
 import asyncio
+import threading
 from pathlib import Path
 
 from .state import ClientState
@@ -54,6 +55,7 @@ class CapsWriterClient:
             
         # 初始化状态容器
         self.state = ClientState(app=self)
+        self._stopped = False
 
         # 初始化热词管理器
         self.hotword = HotwordManager(
@@ -84,6 +86,9 @@ class CapsWriterClient:
         """
         统一释放所有资源（清理顺序：硬件 -> 托盘 -> WebSocket -> State）
         """
+        if self._stopped:
+            return
+        self._stopped = True
         logger.info("正在执行 CapsWriterClient 资源释放...")
 
         # 1. 停止核心运行组件
@@ -129,13 +134,50 @@ class CapsWriterClient:
         if files:
             # 文件转录模式
             runner = FileRunner(self, files)
-        else:
-            # 麦克风实时模式
-            runner = MicRunner(self)
-        
+            self._run_runner(runner)
+            return
+
+        runner = MicRunner(self)
+        # 菜单栏的 NSApplication 只能占住主线程。麦克风和识别放到旁边。
+        if sys.platform == 'darwin' and Config.enable_tray:
+            self._start_mic_with_menu(runner)
+            return
+        self._run_runner(runner)
+
+    def _run_runner(self, runner) -> None:
         try:
             self.loop.run_until_complete(runner.run())
         except RuntimeError:
-            ...
+            return
+
+    def _start_mic_with_menu(self, runner) -> None:
+        try:
+            self.tray.start()
+        except Exception as exc:
+            logger.warning('菜单栏没有起来: %s' % exc)
+
+        def worker():
+            asyncio.set_event_loop(self.loop)
+            self._run_runner(runner)
+
+        # 没有菜单时，工作线程必须能撑住进程。
+        has_menu = self.tray.running
+        thread = threading.Thread(
+            target=worker,
+            name='capswriter-client',
+            daemon=has_menu,
+        )
+        thread.start()
+        if not has_menu:
+            thread.join()
+            return
+        try:
+            self.tray.run_blocking()
+        finally:
+            if self.loop.is_running():
+                self.loop.call_soon_threadsafe(self.stop)
+            else:
+                self.stop()
+            thread.join(timeout=3)
 
 

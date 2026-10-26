@@ -140,8 +140,11 @@ r"""
   控制键:
       ctrl_l,   ctrl_r,
       shift,  shift_r,
-      alt_l,    alt_gr,
+      alt_l,    alt_r,    alt_gr,
       cmd,    cmd_r
+
+  macOS 的右 Option 在 pynput 里会报成 alt_gr，和 alt_r 是同一个键。
+  darwin_shortcuts 写 alt_r 即可。
 
   特殊键：
       space, enter, tab, backspace, delete, insert, home, end

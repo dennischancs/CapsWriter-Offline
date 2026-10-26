@@ -16,6 +16,7 @@ import threading
 from typing import Union, Literal
 import sys
 import os
+import subprocess
 
 # 直接运行时，将项目根目录添加到 sys.path
 if __name__ == "__main__":
@@ -45,6 +46,26 @@ from . import logger
 # 公共 API 函数
 # ============================================================
 
+def _darwin_notify(text: str) -> None:
+    """菜单栏已经占用 NSApplication。这时再创建 Tk 会触发 macOSVersion 异常并退出进程。"""
+    message = ' '.join((text or '提示').split())
+    if len(message) > 180:
+        message = message[:177] + '...'
+    logger.warning(message)
+    script = 'display notification "%s" with title "CapsWriter"' % (
+        message.replace('\\', '\\\\').replace('"', '\\"')
+    )
+    try:
+        subprocess.run(
+            ['osascript', '-e', script],
+            check=False,
+            timeout=3,
+            capture_output=True,
+        )
+    except Exception as exc:
+        logger.warning('系统通知没有发出: %s' % exc)
+
+
 def toast(
     text: str,
     font_size: int = 14,
@@ -71,6 +92,9 @@ def toast(
         window_type: 窗口类型 ('text' 或 'label')
         markdown: 是否启用 Markdown 渲染
     """
+    if sys.platform == 'darwin':
+        _darwin_notify(text)
+        return
     manager = ToastMessageManager()
     msg = ToastMessage(
         text=text,
@@ -111,6 +135,9 @@ def toast_stream(
         window_type: 窗口类型 ('text' 或 'label')
         markdown: 是否启用 Markdown 渲染
     """
+    if sys.platform == 'darwin':
+        _darwin_notify(text)
+        return
     manager = ToastMessageManager()
 
     # 创建流式 toast

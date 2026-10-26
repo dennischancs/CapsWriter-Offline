@@ -105,6 +105,10 @@ class TextOutput:
             text: 要粘贴的文本
         """
         logger.debug(f"使用粘贴方式输出文本，长度: {len(text)}")
+        from .platform_keys import accessibility_trusted
+        if platform.system() == 'Darwin' and not accessibility_trusted():
+            _keep_text_on_toast(text, PermissionError('没有辅助功能权限'))
+            return
         
         # 保存剪贴板
         try:
@@ -158,6 +162,11 @@ def _keep_text_on_toast(text: str, exc: Exception) -> None:
     logger.warning(f"上屏失败，文字留在提示里: {exc}")
     if sys.platform != 'darwin':
         return
+    try:
+        from core.client.state import console
+        console.print(f'[bold yellow]没有上屏，文字留在这里：[/]{text}')
+    except Exception:
+        logger.warning(text)
     try:
         from core.ui.toast import toast
         toast(text or "没有辅助功能权限，文字没有上屏", duration=8000)

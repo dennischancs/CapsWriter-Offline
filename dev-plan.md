@@ -169,6 +169,7 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 - Windows：现有 `win32_event_filter` 和抑制逻辑一行不删。
 - Darwin：`pynput` 的按下 / 松开。按住超过 `threshold` 开始录音，松开停止。做不到系统级吞噬。`suppress=True` 在 Darwin 上打 warning 然后按不抑制处理。
 - 默认键不用 CapsLock。右 Option 不可用时，文档让用户改成 `f8`，代码不自动再挑一个键。
+- pynput 在 Darwin 上用虚拟键码 `0x3D` 先后登记 `alt_r` 和 `alt_gr`，监听器交出的名字是 `alt_gr`。配置里的 `alt_r` 和事件里的 `alt_gr` 都算右 Option。
 
 上屏：
 
@@ -221,6 +222,7 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 - `key_mapper`、托盘、`windll` 守卫。
 - Darwin 快捷键和粘贴。
 - 服务端这时可以还是 CPU ONNX SenseVoice。
+- 2026-10-27：菜单循环留在主线程，麦克风在旁边的线程。没有辅助功能时不上屏。右 Option 的 `alt_gr` 会对上 `alt_r`。提示走系统通知，不在菜单进程里开 Tk。A1、A2 仍要人在「文本编辑」和系统权限里看，没有勾。
 
 ### 阶段 2：勾 A3、A4、A7
 

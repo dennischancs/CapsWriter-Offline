@@ -10,6 +10,7 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from typing import Optional
+import sys
 
 from core.client.state import console
 from . import logger
@@ -34,6 +35,14 @@ def on_add_hotword():
     """
     处理"添加热词"菜单点击
     """
+    if sys.platform == 'darwin':
+        logger.warning('菜单栏运行时不开 Tk 窗口。请直接编辑 hot.txt。')
+        try:
+            from core.ui.toast import toast
+            toast('请直接编辑 hot.txt')
+        except Exception:
+            pass
+        return
     try:
         # 获取对话框管理器并显示对话框
         manager = get_dialog_manager()

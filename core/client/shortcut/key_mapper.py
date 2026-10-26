@@ -164,3 +164,23 @@ class KeyMapper:
         if char:
             return char
         return ''
+
+
+# Darwin 上 pynput 先登记 alt_r，再用同一个虚拟键码 0x3D 登记 alt_gr。
+# 监听器交出的是后写进去的 alt_gr。配置写 alt_r 或 alt_gr 都是右 Option。
+_EQUIVALENT_KEYS = {
+    'alt_r': 'alt_gr',
+    'alt_gr': 'alt_r',
+}
+
+
+def configured_key_name(reported: str, configured) -> str:
+    """把监听到的键名对上任务表里实际配置的名字。对不上就返回空字符串。"""
+    if not reported:
+        return ''
+    if reported in configured:
+        return reported
+    alias = _EQUIVALENT_KEYS.get(reported)
+    if alias and alias in configured:
+        return alias
+    return ''

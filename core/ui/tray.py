@@ -325,6 +325,10 @@ class _TraySystem:
 
     def start(self) -> None:
         """启动托盘系统"""
+        # macOS 的状态栏菜单必须在主线程跑 NSApplication。这里只创建图标。
+        if platform.system() == 'Darwin':
+            return
+
         # 托盘图标线程
         t_tray = threading.Thread(target=self.icon.run, daemon=False)
         t_tray.start()
@@ -338,6 +342,17 @@ class _TraySystem:
 
         # 启动时隐藏窗口
         self.toggle_window()
+
+
+def run_tray() -> None:
+    """在当前线程阻塞运行托盘。Darwin 上要由主线程调用。"""
+    if _tray_instance is None or _tray_instance.icon is None:
+        return
+    _tray_instance.icon.run()
+
+
+def tray_running() -> bool:
+    return _tray_instance is not None and getattr(_tray_instance, 'icon', None) is not None
 
 
 def enable_min_to_tray(name: Optional[str] = None, icon_path: Optional[str] = None, exit_callback=None, more_options: list = None) -> None:

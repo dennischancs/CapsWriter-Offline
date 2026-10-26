@@ -37,8 +37,20 @@ def set_ui_logger(real_logger):
 # 导出组件
 # ============================================================
 
-from .toast import toast, toast_stream, ToastMessage, ToastMessageManager
-from .tray import enable_min_to_tray, stop_tray
+try:
+    from .toast import toast, toast_stream, ToastMessage, ToastMessageManager
+except Exception as exc:
+    logger.warning('Toast 不可用，文字会留在日志里: %s' % exc)
+
+    def toast(text, *args, **kwargs):
+        logger.warning(text)
+
+    def toast_stream(*args, **kwargs):
+        return None
+
+    ToastMessage = None
+    ToastMessageManager = None
+from .tray import enable_min_to_tray, run_tray, stop_tray, tray_running
 
 __all__ = [
     'logger',
@@ -48,5 +60,7 @@ __all__ = [
     'ToastMessage',
     'ToastMessageManager',
     'enable_min_to_tray',
+    'run_tray',
     'stop_tray',
+    'tray_running',
 ]

@@ -19,6 +19,7 @@ from pynput import keyboard, mouse
 from . import logger
 from core.client.shortcut.key_mapper import *
 from core.client.shortcut.key_mapper import KeyMapper
+from core.client.shortcut.key_mapper import configured_key_name
 from core.client.shortcut.emulator import ShortcutEmulator
 from core.client.shortcut.event_handler import ShortcutEventHandler
 from core.client.shortcut.task import ShortcutTask
@@ -100,16 +101,16 @@ class ShortcutManager:
                 shortcut.suppress = False
 
     def _on_key_press(self, key) -> None:
-        key_name = KeyMapper.event_to_name(key)
-        if not key_name or key_name not in self.tasks:
+        key_name = configured_key_name(KeyMapper.event_to_name(key), self.tasks)
+        if not key_name:
             return
         if self._emulator.is_emulating(key_name) or self.is_restoring(key_name):
             return
         self._event_handler.handle_keydown(key_name, self.tasks[key_name])
 
     def _on_key_release(self, key) -> None:
-        key_name = KeyMapper.event_to_name(key)
-        if not key_name or key_name not in self.tasks:
+        key_name = configured_key_name(KeyMapper.event_to_name(key), self.tasks)
+        if not key_name:
             return
         if self._emulator.is_emulating(key_name):
             self._emulator.clear_emulating_flag(key_name)
@@ -306,6 +307,7 @@ class ShortcutManager:
                     )
                 else:
                     self._relax_suppress()
+                    self._warn_darwin_permissions()
                     self.keyboard_listener = keyboard.Listener(
                         on_press=self._on_key_press,
                         on_release=self._on_key_release,
@@ -345,6 +347,19 @@ class ShortcutManager:
             logger.error("输入监控不可用，%s快捷键不生效: %s" % (kind, exc))
             return
         logger.info("%s监听器已启动" % kind)
+
+    def _warn_darwin_permissions(self) -> None:
+        """没输入监控时快捷键不会响。没辅助功能时文字不能上屏。都不让进程退出。"""
+        if sys.platform == 'win32':
+            return
+        try:
+            from core.client.output.platform_keys import darwin_permission_warnings, probe_darwin_permissions
+        except Exception as exc:
+            logger.warning('无法检查 macOS 权限: %s' % exc)
+            return
+        ax_trusted, listen_trusted = probe_darwin_permissions()
+        for message in darwin_permission_warnings(ax_trusted, listen_trusted):
+            logger.warning(message)
 
     def stop(self) -> None:
         """停止所有监听器和清理资源"""

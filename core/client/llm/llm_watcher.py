@@ -205,8 +205,7 @@ class LLMFileWatcher(FileSystemEventHandler):
         """启动监控"""
         # 监控 LLM 目录
         self.observer.schedule(self, str(self.llm_dir), recursive=False)
-        # 同时也监控 Base 目录（为了 hot files），non-recursive
-        self.observer.schedule(self, str(self.base_dir), recursive=False)
+        # 仓库根目录由热词监视器看着。这里再订一次，macOS 的 FSEvents 会报 already scheduled。
         
         self.observer.start()
         self._is_started = True

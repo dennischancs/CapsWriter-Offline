@@ -10,6 +10,7 @@ import queue
 import threading
 import tkinter as tk
 from typing import Optional
+import sys
 
 from config_client import ClientConfig as Config
 from core.client.state import console
@@ -35,6 +36,14 @@ def on_edit_context():
     """
     处理"编辑上下文"菜单点击
     """
+    if sys.platform == 'darwin':
+        logger.warning('菜单栏运行时不开 Tk 窗口。请直接改 config_client.py 的 context。')
+        try:
+            from core.ui.toast import toast
+            toast('上下文请改 config_client.py 的 context')
+        except Exception:
+            pass
+        return
     try:
         # 获取对话框管理器并显示对话框
         manager = get_dialog_manager()

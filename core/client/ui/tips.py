@@ -12,9 +12,15 @@ import os
 from rich.markdown import Markdown
 
 from core.client.state import console
-from config_client import ClientConfig as Config, __version__
+from config_client import ClientConfig as Config, __version__, active_shortcuts
 from . import logger
 
+
+_KEY_LABELS = {
+    'alt_r': '右 Option',
+    'alt_gr': '右 Option',
+    'alt_l': '左 Option',
+}
 
 
 def _format_shortcut_name(key: str) -> str:
@@ -27,6 +33,8 @@ def _format_shortcut_name(key: str) -> str:
     Returns:
         str: 格式化后的名称（如 'CapsLock', 'F12'）
     """
+    if key in _KEY_LABELS:
+        return _KEY_LABELS[key]
     # 将下划线替换为空格，然后标题化
     return key.replace('_', ' ').title()
 
@@ -38,7 +46,7 @@ def _get_shortcuts_display() -> str:
     Returns:
         str: 格式化的快捷键列表，用逗号分隔
     """
-    enabled_shortcuts = [sc for sc in Config.shortcuts if sc.get('enabled', True)]
+    enabled_shortcuts = [sc for sc in active_shortcuts() if sc.get('enabled', True)]
     if not enabled_shortcuts:
         return '未配置快捷键'
 

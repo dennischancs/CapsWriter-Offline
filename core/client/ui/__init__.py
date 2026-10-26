@@ -26,11 +26,28 @@ from core.ui import (
     ToastMessageManager,
     enable_min_to_tray,
     stop_tray,
+    run_tray,
+    tray_running,
 )
 
-# 4. 导出菜单处理器（供 Startup 使用）
-from core.ui.hotword_menu_handler import on_add_hotword
-from core.ui.context_menu_handler import on_edit_context
+
+def _unavailable(message):
+    def _call(*_args, **_kwargs):
+        logger.warning(message)
+    return _call
+
+
+# 4. 导出菜单处理器（供 Startup 使用）。没有 Tk 时不要让整个客户端起不来。
+try:
+    from core.ui.hotword_menu_handler import on_add_hotword
+except Exception as exc:
+    logger.warning('热词编辑窗口不可用: %s' % exc)
+    on_add_hotword = _unavailable('热词编辑需要带 Tk 的 Python')
+try:
+    from core.ui.context_menu_handler import on_edit_context
+except Exception as exc:
+    logger.warning('上下文编辑窗口不可用: %s' % exc)
+    on_edit_context = _unavailable('上下文编辑需要带 Tk 的 Python')
 
 __all__ = [
     'logger',
@@ -41,6 +58,8 @@ __all__ = [
     'ToastMessageManager',
     'enable_min_to_tray',
     'stop_tray',
+    'run_tray',
+    'tray_running',
     'on_add_hotword',
     'on_edit_context',
 ]

@@ -1,7 +1,7 @@
 # coding: utf-8
 import os
 from . import logger
-import os, sys, subprocess, time
+import os, sys, subprocess, time, threading
 from config_client import ClientConfig as Config
 
 
@@ -19,6 +19,10 @@ class TrayManager:
     def start(self):
         """初始化系统托盘图标"""
         if not Config.enable_tray:
+            return
+        # 状态栏只能在主线程创建。麦克风线程再进来时，图标已经在了。
+        if sys.platform == 'darwin' and threading.current_thread() is not threading.main_thread():
+            logger.debug('菜单栏只在主线程创建')
             return
 
         try:
@@ -48,6 +52,24 @@ class TrayManager:
             more_options=menu
         )
         logger.info("托盘图标已启用")
+
+    def run_blocking(self) -> None:
+        """Darwin 上由主线程阻塞在菜单循环里。没有图标时立刻返回。"""
+        if not Config.enable_tray:
+            return
+        try:
+            from ..ui import run_tray
+        except ImportError:
+            return
+        run_tray()
+
+    @property
+    def running(self) -> bool:
+        try:
+            from ..ui import tray_running
+        except ImportError:
+            return False
+        return bool(tray_running())
 
     def _open_logs(self):
         folder = os.path.join(self.app.base_dir, 'logs')

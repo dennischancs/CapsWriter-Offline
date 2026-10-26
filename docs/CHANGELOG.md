@@ -5,7 +5,7 @@
 - **Apple Silicon**：M 系列可以从源码跑。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX / Metal。`model_backend=onnx` 时 SenseVoice 试 CoreML，失败再退 CPU。Paraformer 和缺标点时的标点模型同样能开 CoreML 就开。Intel Mac 除外。
 - 听写默认按住右 Option，松开后粘贴，不吞噬 CapsLock。没有麦克风权限时提示去系统设置，进程不退出。没有辅助功能权限时文字留在提示里。
 - Windows 的 DirectML、CapsLock 抑制和 `nvidia-smi` 锁频率保持原样。Mac 上跳过锁频率。
-- 验证：`python3 -m unittest discover -s tests -p 'test_*.py'`，24 项通过。Mac mini M4、16GB、macOS 26.7.1 上断网复跑：SenseVoice 6.23 秒中文，RTF 0.027 然后 0.006；Qwen3-ASR 1.7B 10 秒中文，RTF 0.085 然后 0.086，日志是 `Device(gpu, 0)`。`model_backend=onnx` 时，SenseVoice 默认的 `CPU` 被改成 CoreML，编码器和解码器会话都是 `CoreMLExecutionProvider`，一段中文文本非空。强制 CoreML 创建失败后，会话退回 `CPUExecutionProvider`。Fun-ASR 和 Qwen 没有用 ONNX 交差。听写按键和菜单权限这次没有跑。
+- 验证：`python3 -m unittest discover -s tests -p 'test_*.py'`，31 项通过。Mac mini M4、16GB、macOS 26.7.1 上断网复跑：SenseVoice 6.23 秒中文，RTF 0.027 然后 0.006；Qwen3-ASR 1.7B 10 秒中文，RTF 0.085 然后 0.086，日志是 `Device(gpu, 0)`。`model_backend=onnx` 时，SenseVoice 默认的 `CPU` 被改成 CoreML，编码器和解码器会话都是 `CoreMLExecutionProvider`，一段中文文本非空。强制 CoreML 创建失败后，会话退回 `CPUExecutionProvider`。Fun-ASR 和 Qwen 没有用 ONNX 交差。客户端可以启动并停在菜单栏：提示写右 Option，`alt_gr` 会对上配置里的 `alt_r`。没有麦克风权限时提示去系统设置，进程不退出。没有输入监控和辅助功能时只写日志。菜单进程里不再开 Tk，也不再因为重复监视仓库根目录抛出 FSEvents 异常。还没有人在「文本编辑」里按住右 Option 看文字出现。
 
 ## v2.7
 
