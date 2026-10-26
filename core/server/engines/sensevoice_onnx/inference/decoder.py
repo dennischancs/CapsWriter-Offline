@@ -1,6 +1,12 @@
 from pathlib import Path
+import sys
 import numpy as np
-import onnxruntime as ort
+from core.server.engines.ort_session import (
+    create_ort_session,
+    effective_provider,
+    fixed_pad_seconds,
+    uses_fixed_shape,
+)
 
 class SenseVoiceDecoder:
     def __init__(self, decoder_path: str, onnx_provider="cpu", dml_pad_to: int = 30):
@@ -11,35 +17,21 @@ class SenseVoiceDecoder:
         self.onnx_provider = onnx_provider.upper()
 
         # 2. 初始化会话
-        available_providers = ort.get_available_providers()
-        providers = ['CPUExecutionProvider']
-        
-        if self.onnx_provider in ('TRT', 'TENSORRT') and 'TensorrtExecutionProvider' in available_providers:
-            providers.insert(0, ('TensorrtExecutionProvider', {
-                'trt_fp16_enable': True,
-                'trt_engine_cache_enable': True,
-                'trt_engine_cache_path': Path(self.model_path).parent / 'trt_cache',
-            }))
-        elif self.onnx_provider == 'DML' and 'DmlExecutionProvider' in available_providers:
-            providers.insert(0, 'DmlExecutionProvider')
-        elif self.onnx_provider == 'CUDA' and 'CUDAExecutionProvider' in available_providers:
-            providers.insert(0, 'CUDAExecutionProvider')
-        
-        session_opts = ort.SessionOptions()
-        session_opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        session_opts.add_session_config_entry("session.inter_op.allow_spinning", "0")
-        session_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        
-        self.session = ort.InferenceSession(str(decoder_path), providers=providers, sess_options=session_opts)
+        effective, warning = effective_provider(self.onnx_provider, sys.platform)
+        if warning:
+            print(f"[Decoder] {warning}")
+        self.onnx_provider = effective
+        self.session = create_ort_session(str(decoder_path), self.onnx_provider)
 
         # 3. 精度适配
         in_type = self.session.get_inputs()[0].type
         self.input_dtype = np.float16 if 'float16' in in_type else np.float32
 
         # 4. DML 预热
-        self.use_dml = (self.onnx_provider == "DML")
-        self.fixed_len = int(dml_pad_to * 17) + 4 # 1s ≈ 17帧 + 4帧 Prompt
-        if self.use_dml and isinstance(dml_pad_to, int) and dml_pad_to > 0:
+        self.use_dml = uses_fixed_shape(self.onnx_provider)
+        pad_seconds = fixed_pad_seconds(self.onnx_provider, dml_pad_to)
+        self.fixed_len = int(pad_seconds * 17) + 4 # 1s ≈ 17帧 + 4帧 Prompt
+        if self.use_dml and pad_seconds > 0:
             self.warmup()
 
     def warmup(self):

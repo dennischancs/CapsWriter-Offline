@@ -1,0 +1,37 @@
+# Apple Silicon（arm64）依赖。不要在这里写 onnxruntime-directml、pywin32、keyboard。
+# MLX 若还没有 cp314 轮子，用 3.13 或 3.12 装这一份。不要为此把仓库的 requires-python 降下去。
+# mlx-audio 若没有 [stt] extra，去掉方括号再装。
+mlx
+mlx-audio[stt]
+onnxruntime
+huggingface_hub
+sherpa-onnx
+numpy
+gguf
+sentencepiece
+soundfile
+numba
+websockets
+openai
+ollama
+httpx
+requests
+rich
+typer
+colorama
+markdown
+markdown-it-py
+tkhtmlview
+pynput
+pyclip
+sounddevice
+watchdog
+pystray
+Pillow
+pypinyin
+srt
+rapidfuzz
+pydub
+nagisa
+soynlp
+psutil

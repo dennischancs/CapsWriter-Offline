@@ -124,6 +124,9 @@ class AudioStreamManager:
             logger.warning("无法获取音频设备名称（编码问题）")
         except sd.PortAudioError:
             logger.error("未找到麦克风设备")
+            if sys.platform == 'darwin':
+                _darwin_mic_denied("没有麦克风权限，或没有可用的输入设备。请到系统设置 > 隐私与安全性 > 麦克风打开权限。")
+                return None
             input('按回车键退出')
             sys.exit(1)
 
@@ -150,6 +153,9 @@ class AudioStreamManager:
 
         except sd.PortAudioError as e:
             logger.error(f"创建音频流失败: {e}", exc_info=True)
+            if sys.platform == 'darwin':
+                _darwin_mic_denied("没有麦克风权限，或麦克风被占用。请到系统设置 > 隐私与安全性 > 麦克风，允许当前终端。")
+                return None
             if '-9999' in str(e):
                 console.print("""
 [bold red]检测到麦克风被占用或权限异常（错误码 -9999）[/bold red]
@@ -205,3 +211,13 @@ class AudioStreamManager:
 
         # 启动新流
         return self.start()
+
+
+def _darwin_mic_denied(message: str) -> None:
+    logger.error(message)
+    console.print(f'[bold red]{message}[/bold red]')
+    try:
+        from core.ui.toast import toast
+        toast(message, duration=8000)
+    except Exception:
+        pass

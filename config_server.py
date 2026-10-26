@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 # 版本信息
-__version__ = '2.7'
+__version__ = '2.8.0'
 
 # 项目根目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +15,12 @@ class ServerConfig:
 
     # 语音模型选择：'qwen_asr', 'fun_asr_nano', 'sensevoice', 'paraformer'
     model_type = 'qwen_asr'
+    # auto：Darwin 上 SenseVoice / Fun / Qwen 走 MLX，Windows 仍走现有引擎。
+    # onnx：连 Darwin 也走现有 ONNX / GGUF。mlx：强制 MLX（Paraformer 除外）。
+    model_backend = 'auto'
+    # auto：统一内存 >= 16GB 用 1.7B 8bit，否则 0.6B。也可写成 '0.6b' 或 '1.7b'。
+    qwen_mlx_variant = 'auto'
+    mlx_auto_download = False   # 缺目录时报目录名。需要时再打开下载
 
     format_num = True       # 输出时是否将中文数字转为阿拉伯数字
     format_spell = True     # 输出时是否调整中英之间的空格
@@ -50,6 +56,14 @@ class ModelPaths:
 
     # 基础目录
     model_dir = Path() / 'models'
+
+    # Apple Silicon MLX 权重。拷走 models/mlx/ 后应能断网启动。
+    mlx_dir = model_dir / 'mlx'
+    mlx_sensevoice_dir = mlx_dir / 'SenseVoiceSmall'
+    mlx_fun_asr_dir = mlx_dir / 'Fun-ASR-Nano-2512'
+    mlx_qwen_17_dir = mlx_dir / 'Qwen3-ASR-1.7B-8bit'
+    mlx_qwen_06_dir = mlx_dir / 'Qwen3-ASR-0.6B-8bit'
+    mlx_aligner_dir = mlx_dir / 'Qwen3-ForcedAligner-0.6B-8bit'
 
     # Paraformer 模型路径
     paraformer_dir = model_dir / 'Paraformer' / "speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-onnx"

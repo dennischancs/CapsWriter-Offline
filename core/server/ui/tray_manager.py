@@ -1,6 +1,8 @@
 # coding: utf-8
 from __future__ import annotations
 import os
+import sys
+import subprocess
 from typing import TYPE_CHECKING
 from config_server import ServerConfig as Config
 from ..state import console
@@ -30,13 +32,37 @@ class TrayManager:
         # 获取图标路径
         icon_path = os.path.join(self.app.base_dir, 'assets', 'icon.ico')
         
+        menu = None
+        if sys.platform == 'darwin':
+            menu = [
+                ('📂 日志', self._open_logs),
+                ('✨ 热词', self._open_hotwords),
+            ]
         # 启用托盘
         enable_min_to_tray(
             'CapsWriter Server',
             icon_path,
-            exit_callback=self._request_exit
+            exit_callback=self._request_exit,
+            more_options=menu
         )
         logger.info("托盘图标已启用")
+
+    def _open_path(self, target):
+        if sys.platform == 'darwin':
+            subprocess.Popen(['open', target])
+        elif sys.platform == 'win32':
+            os.startfile(target)
+        else:
+            subprocess.Popen(['xdg-open', target])
+
+    def _open_logs(self, icon=None, item=None):
+        folder = os.path.join(self.app.base_dir, 'logs')
+        os.makedirs(folder, exist_ok=True)
+        self._open_path(folder)
+
+    def _open_hotwords(self, icon=None, item=None):
+        target = os.path.abspath('hot-server.txt')
+        self._open_path(target)
 
     def _request_exit(self, icon=None, item=None):
         """托盘图标引用的退出回调"""

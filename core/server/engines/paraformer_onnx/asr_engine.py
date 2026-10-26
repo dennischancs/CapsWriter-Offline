@@ -1,5 +1,6 @@
 # coding: utf-8
 import sherpa_onnx
+import sys
 import numpy as np
 from typing import Optional, List, Any, Tuple
 from dataclasses import dataclass
@@ -139,7 +140,20 @@ class ParaformerEngine(BaseASREngine):
             'provider': self.config.provider,
             'debug': self.config.debug,
         }
-        self.recognizer = sherpa_onnx.OfflineRecognizer.from_paraformer(**params)
+        self.recognizer = self._open_recognizer(params)
+
+    def _open_recognizer(self, params):
+        if sys.platform != 'darwin':
+            return sherpa_onnx.OfflineRecognizer.from_paraformer(**params)
+        coreml = dict(params)
+        coreml['provider'] = 'coreml'
+        try:
+            return sherpa_onnx.OfflineRecognizer.from_paraformer(**coreml)
+        except Exception as exc:
+            logger.warning(f"Paraformer CoreML 失败，改用 CPU: {exc}")
+            cpu = dict(params)
+            cpu['provider'] = 'cpu'
+            return sherpa_onnx.OfflineRecognizer.from_paraformer(**cpu)
 
     @property
     def capabilities(self) -> List[EngineCapabilities]:

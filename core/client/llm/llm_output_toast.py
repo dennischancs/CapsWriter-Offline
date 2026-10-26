@@ -82,8 +82,8 @@ async def handle_toast_mode(handler, text: str, role_config=None, matched_hotwor
             result_text = TextOutput.strip_punc(result_text)
             
             from .llm_output_typing import output_text
-            from config_client import ClientConfig as Config
-            await output_text(result_text, Config.paste)
+            from config_client import active_paste
+            await output_text(result_text, active_paste())
             return (result_text, 0, 0.0)
         else:
             from .llm_error_handler import show_error_notification

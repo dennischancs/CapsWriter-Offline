@@ -118,10 +118,22 @@ def _get_macos_window_info() -> dict:
                 'process_name': app_name,
                 'app_name': app_name
             }
+        _log_automation_denied()
     except Exception:
+        _log_automation_denied()
         pass
 
     return {}
+
+
+def _log_automation_denied() -> None:
+    """自动化权限缺失时窗口信息为空，听写继续。不写窗口标题。"""
+    message = '没有自动化权限或无法读取前台应用，窗口信息为空，听写继续'
+    try:
+        from core import get_logger
+        get_logger('client').warning(message)
+    except Exception:
+        pass
 
 
 def _get_linux_window_info() -> dict:

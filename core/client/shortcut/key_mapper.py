@@ -5,19 +5,41 @@
 处理按键名称和虚拟键码之间的转换，以及相关常量定义
 """
 
+import sys
+
 from pynput import keyboard
-from pynput._util.win32 import KeyTranslator
 from . import logger
 
 
-# 创建键盘翻译器实例（用于 VK 到字符的转换）
-_key_translator = KeyTranslator()
+# Windows 专用。Darwin 不在导入时碰 pynput._util.win32。
+_key_translator = None
 
 # 特殊键 VK 映射（从 pynput 复制）
-_SPECIAL_KEYS = {
-    key.value.vk: key
-    for key in keyboard.Key
-}
+def _special_key_map():
+    mapping = {}
+    for key in keyboard.Key:
+        try:
+            vk = key.value.vk
+        except Exception:
+            continue
+        if vk is None:
+            continue
+        mapping[vk] = key
+    return mapping
+
+
+_SPECIAL_KEYS = _special_key_map()
+
+
+def _get_key_translator():
+    """只在 Windows 上创建 KeyTranslator。"""
+    global _key_translator
+    if sys.platform != 'win32':
+        return None
+    if _key_translator is None:
+        from pynput._util.win32 import KeyTranslator
+        _key_translator = KeyTranslator()
+    return _key_translator
 
 # 小键盘按键映射（VK -> 名称）
 NUMPAD_KEYS = {
@@ -97,7 +119,10 @@ class KeyMapper:
 
         # 使用 pynput 的 KeyTranslator 获取字符（字母、数字、符号键）
         try:
-            params = _key_translator(vk, is_press=True)
+            translator = _get_key_translator()
+            if translator is None:
+                return f'vk_{vk}'
+            params = translator(vk, is_press=True)
             if 'char' in params and params['char'] is not None:
                 return params['char']
         except Exception:
@@ -128,3 +153,14 @@ class KeyMapper:
 
         logger.warning(f"未知按键名称: {key_name}")
         return None
+
+    @staticmethod
+    def event_to_name(key) -> str:
+        """把 pynput 的按键对象转成和 Shortcut.key 一样的名字。"""
+        name = getattr(key, 'name', None)
+        if name:
+            return name
+        char = getattr(key, 'char', None)
+        if char:
+            return char
+        return ''

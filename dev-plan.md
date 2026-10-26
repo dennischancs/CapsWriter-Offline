@@ -6,6 +6,8 @@
 
 识别、合并、热词 RAG、协议、批量脚本不动。要动的是依赖怎么按平台拆、引擎工厂在 Darwin 上创建哪一个类、Win32 输入和托盘怎么分支。
 
+待办就是 [prd.md](prd.md) 文首的验收清单，不另建任务表。下面各阶段只说明为了勾上哪一条。2.8.0 只勾上了不下载权重就能证明的 A10 和 A11。A1 到 A9 还要人在真机上看，没有勾，也不要当成已经听写成功。
+
 ## 1. 加速分工
 
 | 现在 | Darwin 主路径 | 退路 | 明确不做 |
@@ -204,7 +206,7 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 
 ### 阶段 0：探针
 
-在目标 Mac 上确认四件事，记在测试笔记里，不改产品代码：
+不单独勾清单。在目标 Mac 上确认四件事，记在测试笔记里，不改产品代码：
 
 1. `mlx`、`mlx-audio` 的轮子和 Python 版本。
 2. `load(本地目录)` 能否接受 numpy 波形；不能的话，临时文件方案就定下来。
@@ -213,40 +215,36 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 
 同时看启动时 MLX 默认设备是不是 GPU。
 
-### 阶段 1：能 import，能起来
+### 阶段 1：勾 A1、A2，并保住 A10 的 Windows 半边
 
 - 依赖 marker。
 - `key_mapper`、托盘、`windll` 守卫。
 - Darwin 快捷键和粘贴。
-- 此阶段服务端仍可以是 CPU ONNX SenseVoice。验收是按住右 Option 能上屏，且 Windows 还能启动。
+- 服务端这时可以还是 CPU ONNX SenseVoice。
 
-### 阶段 2：SenseVoice MLX
+### 阶段 2：勾 A3、A4、A7
 
 - `loader.py`、`audio.py`、`sensevoice.py`、工厂分叉、权重下载到 `models/mlx/`。
-- 预热、GPU 日志、1.7B 那种重试在这个阶段还用不上。
-- 验收：5 秒中文，预热后 RTF < 0.3，菜单栏听写成功。
+- 预热和 GPU 日志。1.7B 的内存重试留到下一阶段。
 
-### 阶段 3：Qwen 和 Fun
+### 阶段 3：勾 A5、A6
 
-- 两个引擎类、变体选择、内存失败重试、Fun 的 context。
+- Qwen、Fun 两个引擎类，变体选择，内存失败重试，Fun 的 context。
 - 不声明 `TIMESTAMPS`。
-- 验收：Qwen 10 秒中文，预热后 RTF < 0.5，有标点。
 
-### 阶段 4：对齐器和文件
+### 阶段 4：勾 A8
 
 - `aligner.py` 接上 `ManagedAlignerProxy`。
 - 用现有文件转录或 `batch_transcribe.py` 出 `.srt` / `.txt`。
-- 中文时间轴单调。对齐失败时日志里能看出退回了均分，而不是假装成功。
 
-### 阶段 5：CoreML 退路
+### 阶段 5：勾 A9
 
 - `ort_session.py` 和 SenseVoice ONNX 的调用点。
 - Paraformer / 标点能开 CoreML 就开。
-- `model_backend=onnx` 时 SenseVoice 仍能出文本。Fun / Qwen 不承诺这条退路。
 
-### 阶段 6：文档
+### 阶段 6：勾 A11
 
-- `readme.md` 去掉「macOS 不可用」，改成 Apple Silicon 从源码运行，Intel 除外。
+- `readme.md` 去掉「macOS 不可用」。
 - `docs/环境依赖安装说明.md` 增加 Mac 的 Python、ffmpeg、权限。
 - `docs/显卡加速的若干问题.md` 增加 MLX / Metal 和 CoreML 退路。DirectML 章节保留。
 

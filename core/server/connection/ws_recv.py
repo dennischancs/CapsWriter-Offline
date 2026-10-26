@@ -7,6 +7,7 @@ WebSocket 接收处理模块
 
 import json
 import time
+import sys
 from base64 import b64decode
 
 import websockets
@@ -65,7 +66,8 @@ async def message_handler(websocket, msg: AudioMessage, cache: AudioCache, app) 
     socket_id = str(websocket.id)
 
     # 麦克风首次消息 → GPU 加速
-    if is_start and msg.source == 'mic' and Config.gpu_boost_enabled:
+    # Darwin 不跑 nvidia-smi。不要在这里导入 worker，避免把识别进程拉进主进程。
+    if is_start and msg.source == 'mic' and Config.gpu_boost_enabled and sys.platform == 'win32':
         queue_in.put(Task(
             type='cmd',
             task_id='gpu_boost',

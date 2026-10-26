@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import platform
+import sys
 from typing import Optional
 import re
 
-import keyboard
 import pyclip
 from pynput import keyboard as pynput_keyboard
 
-from config_client import ClientConfig as Config
+from config_client import ClientConfig as Config, active_paste
 from core.tools.window_detector import get_active_window_info
+from .platform_keys import type_text
 from . import logger
 
 
@@ -89,7 +90,7 @@ class TextOutput:
         
         # 确定输出方式
         if paste is None:
-            paste = Config.paste
+            paste = active_paste()
         
         if paste:
             await self._paste_text(text)
@@ -115,15 +116,17 @@ class TextOutput:
         pyclip.copy(text)
         
         # 粘贴结果（使用 pynput 模拟 Ctrl+V）
-        controller = pynput_keyboard.Controller()
-        if platform.system() == 'Darwin':
-            # macOS: Command+V
-            with controller.pressed(pynput_keyboard.Key.cmd):
-                controller.tap('v')
-        else:
-            # Windows/Linux: Ctrl+V
-            with controller.pressed(pynput_keyboard.Key.ctrl):
-                controller.tap('v')
+        try:
+            controller = pynput_keyboard.Controller()
+            if platform.system() == 'Darwin':
+                with controller.pressed(pynput_keyboard.Key.cmd):
+                    controller.tap('v')
+            else:
+                with controller.pressed(pynput_keyboard.Key.ctrl):
+                    controller.tap('v')
+        except Exception as exc:
+            _keep_text_on_toast(text, exc)
+            return
         
         logger.debug("已发送粘贴命令 (Ctrl+V)")
         
@@ -144,4 +147,19 @@ class TextOutput:
             text: 要输出的文本
         """
         logger.debug(f"使用打字方式输出文本，长度: {len(text)}")
-        keyboard.write(text)
+        try:
+            type_text(text)
+        except Exception as exc:
+            _keep_text_on_toast(text, exc)
+
+
+def _keep_text_on_toast(text: str, exc: Exception) -> None:
+    """没有辅助功能权限时不上屏，把文字留在提示里。"""
+    logger.warning(f"上屏失败，文字留在提示里: {exc}")
+    if sys.platform != 'darwin':
+        return
+    try:
+        from core.ui.toast import toast
+        toast(text or "没有辅助功能权限，文字没有上屏", duration=8000)
+    except Exception:
+        logger.warning(text)

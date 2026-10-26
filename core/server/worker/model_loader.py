@@ -37,13 +37,17 @@ class ModelLoader:
         2. 扫描引擎能力 (Capabilities)
         3. 自适应挂载缺失能力的插件 (Punc, Aligner)
         """
+        model_type = Config.model_type.lower()
         # 1. 延迟导入通用库
         with console.status("载入模块中...", spinner="bouncingBall", spinner_style="yellow"):
-            import sherpa_onnx
+            # Paraformer 才需要 sherpa。MLX 主路径不在这里导入它，也不去找 llama.dll。
+            if model_type == 'paraformer':
+                import sherpa_onnx  # noqa: F401
         
         t1 = time.time()
-        model_type = Config.model_type.lower()
-        logger.info(f"Loader 开始初始化语音系统 (引擎: {model_type})")
+        logger.info(
+            f"Loader 开始初始化语音系统 (引擎: {model_type}, backend={getattr(Config, 'model_backend', 'auto')})"
+        )
 
         try:
             # 2. 通过工厂实例化 ASR 核心引擎

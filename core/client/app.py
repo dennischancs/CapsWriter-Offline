@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .state import ClientState
 from . import logger
-from config_client import ClientConfig as Config, __version__
+from config_client import ClientConfig as Config, __version__, active_shortcuts
 from core.tools.signal_handler import register_signal
 from .state import console
 from .connection import WebSocketManager
@@ -74,7 +74,7 @@ class CapsWriterClient:
 
         # 实例化硬件资源管理组件
         self.stream = AudioStreamManager(self)
-        self.shortcut = ShortcutManager(self, [Shortcut(**sc) for sc in Config.shortcuts])
+        self.shortcut = ShortcutManager(self, [Shortcut(**sc) for sc in active_shortcuts()])
         self.udp = UDPController(self.shortcut)
 
         # 内存清理

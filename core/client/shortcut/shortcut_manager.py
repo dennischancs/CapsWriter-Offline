@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 import time
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -88,6 +89,47 @@ class ShortcutManager:
             task.pool = self._pool
             task.threshold = shortcut.get_threshold(Config.threshold)
             self.tasks[shortcut.key] = task
+
+    def _relax_suppress(self) -> None:
+        """Darwin 做不到系统级吞噬。suppress=True 只警告，然后按不抑制处理。"""
+        if sys.platform == 'win32':
+            return
+        for shortcut in self.shortcuts:
+            if shortcut.suppress:
+                logger.warning(f"[{shortcut.key}] Darwin 不能吞噬按键，已按不抑制处理")
+                shortcut.suppress = False
+
+    def _on_key_press(self, key) -> None:
+        key_name = KeyMapper.event_to_name(key)
+        if not key_name or key_name not in self.tasks:
+            return
+        if self._emulator.is_emulating(key_name) or self.is_restoring(key_name):
+            return
+        self._event_handler.handle_keydown(key_name, self.tasks[key_name])
+
+    def _on_key_release(self, key) -> None:
+        key_name = KeyMapper.event_to_name(key)
+        if not key_name or key_name not in self.tasks:
+            return
+        if self._emulator.is_emulating(key_name):
+            self._emulator.clear_emulating_flag(key_name)
+            return
+        if self.is_restoring(key_name):
+            self.clear_restoring_flag(key_name)
+            return
+        self._event_handler.handle_keyup(key_name, self.tasks[key_name])
+
+    def _on_mouse_click(self, x, y, button, pressed) -> None:
+        name = getattr(button, 'name', '') or ''
+        aliases = {'button9': 'x2', 'button8': 'x1'}
+        key_name = aliases.get(name, name)
+        if key_name not in self.tasks:
+            return
+        task = self.tasks[key_name]
+        if pressed:
+            self._event_handler.handle_keydown(key_name, task)
+        else:
+            self._event_handler.handle_keyup(key_name, task)
 
     # ========== 监听器创建 ==========
 
@@ -258,21 +300,29 @@ class ShortcutManager:
             if self.keyboard_listener and self.keyboard_listener.is_alive():
                 logger.debug("键盘监听器已在运行，跳过启动")
             else:
-                self.keyboard_listener = keyboard.Listener(
-                    win32_event_filter=self.create_keyboard_filter()
-                )
-                self.keyboard_listener.start()
-                logger.info("键盘监听器已启动")
+                if sys.platform == 'win32':
+                    self.keyboard_listener = keyboard.Listener(
+                        win32_event_filter=self.create_keyboard_filter()
+                    )
+                else:
+                    self._relax_suppress()
+                    self.keyboard_listener = keyboard.Listener(
+                        on_press=self._on_key_press,
+                        on_release=self._on_key_release,
+                    )
+                self._start_listener(self.keyboard_listener, '键盘')
 
         if has_mouse:
             if self.mouse_listener and self.mouse_listener.is_alive():
                 logger.debug("鼠标监听器已在运行，跳过启动")
             else:
-                self.mouse_listener = mouse.Listener(
-                    win32_event_filter=self.create_mouse_filter()
-                )
-                self.mouse_listener.start()
-                logger.info("鼠标监听器已启动")
+                if sys.platform == 'win32':
+                    self.mouse_listener = mouse.Listener(
+                        win32_event_filter=self.create_mouse_filter()
+                    )
+                else:
+                    self.mouse_listener = mouse.Listener(on_click=self._on_mouse_click)
+                self._start_listener(self.mouse_listener, '鼠标')
 
         # 打印所有启用的快捷键
         for shortcut in self.shortcuts:
@@ -280,6 +330,21 @@ class ShortcutManager:
                 mode = "长按" if shortcut.hold_mode else "单击"
                 toggle = "可恢复" if shortcut.is_toggle_key() else "普通键"
                 logger.info(f"  [{shortcut.key}] {mode}模式, 阻塞:{shortcut.suppress}, {toggle}")
+
+    def _start_listener(self, listener, kind: str) -> None:
+        """启动监听。Darwin 上权限失败只记日志，不让进程退出。"""
+        try:
+            listener.start()
+        except Exception as exc:
+            if kind == '键盘':
+                self.keyboard_listener = None
+            else:
+                self.mouse_listener = None
+            if sys.platform == 'win32':
+                raise
+            logger.error("输入监控不可用，%s快捷键不生效: %s" % (kind, exc))
+            return
+        logger.info("%s监听器已启动" % kind)
 
     def stop(self) -> None:
         """停止所有监听器和清理资源"""

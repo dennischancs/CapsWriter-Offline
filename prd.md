@@ -4,6 +4,40 @@
 - 本文替换上一版「用 CoreML 跑现有 ONNX、用 llama.cpp Metal 跑 GGUF」的主路线
 - 怎么改见 [dev-plan.md](dev-plan.md)
 
+## 验收清单
+
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.8.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+
+### 已完成
+
+- [x] 2.7.0 对一个文件夹递归转录音视频，每个文件旁边留下同名 `.srt` 和 `.txt`。两个成品都有效才跳过。一个失败，后面的继续。
+- [x] 2.8.0 Windows 的 DirectML 配置和 CapsLock 抑制还在。Darwin 的依赖不会装上 `onnxruntime-directml`。
+- [x] 2.8.0 `readme.md` 写明 Apple Silicon 可以从源码跑，Intel 除外。DirectML 的说明还在。
+
+### 不做
+
+- [x] 不做 Intel Mac。
+- [x] 不把客户端改写成 Swift，也不套 `mlx-audio` 的 HTTP 服务。
+- [x] 不做签名公证的 `.app`，不做 Mac App Store。
+- [x] 不把 llama.cpp Metal 动态库当作 macOS 主路径，不把 GGUF 导出成 CoreML。
+- [x] 不移植 SenseVoice 的 CTC 热词雷达。热词保证留在客户端替换。
+- [x] 不在 Mac 上吞噬 CapsLock。
+- [x] 不引入 OminiX 的 Rust 组件，不为标点重写模型。
+
+### 还没有
+
+- [ ] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
+- [ ] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限时提示去系统设置，进程不崩溃。没有辅助功能权限时文字留在 Toast，不上屏。
+- [ ] A3. 服务端日志出现 `backend=mlx`、具体仓库 ID，以及 GPU 设备。看不到 `DmlExecutionProvider`，也看不到找不到 `llama.dll`。
+- [ ] A4. SenseVoice 对约 5 秒中文，预热后 RTF 小于 0.3，文本非空可读。第二次不再明显慢于第一次。
+- [ ] A5. Qwen3-ASR 对约 10 秒中文，预热后 RTF 小于 0.5，带标点。统一内存低于 16GB，或 1.7B 加载失败时，日志写明改用 0.6B，并且仍然返回文本。
+- [ ] A6. 把 `model_type` 改成 `fun_asr_nano` 后，一段中文能返回带标点的文本。热词或 context 进入当次识别。这个模型失败时直接报错，不静默去加载 Windows DLL。
+- [ ] A7. 权重在 `models/mlx/`。断网可以再次启动。目录不存在时，错误写明缺哪个目录，而不是 `kernel32` 或 `windll`。
+- [ ] A8. 一条中文音视频经文件转录或 `batch_transcribe.py` 得到非空 `.srt` 和 `.txt`。时间轴单调。日志能看出时间来自对齐器。对齐失败时写明退回按字均分，不把均分说成对齐成功。
+- [ ] A9. `model_backend=onnx` 时，SenseVoice 仍能出文本，并尝试 CoreML，失败再退 CPU。Fun-ASR 和 Qwen 不靠这条退路交差。
+
+不下载权重的检查用 `python3 -m unittest discover -s tests -p 'test_*.py'`。仓库 `.gitignore` 忽略 `test_*.py`，这些测试留在本地，不入库。真机听写、RTF 和系统权限只有人能看。
+
 ## 1. 要做成什么
 
 在 M 系列 Mac 上，从源码启动服务端和客户端，按住一个键说话，松开后文字进当前焦点应用。识别走 Apple Silicon 的原生推理栈，而不是在 Windows 引擎外面套一层能 import 的兼容壳。
@@ -133,15 +167,7 @@ Paraformer 和 CT-Transformer 标点没有可接入的 Python MLX 实现。它�
 
 ## 11. 验收
 
-在一台 Apple Silicon Mac 上，模型已在 `models/mlx/`：
-
-1. 服务端日志含 `backend=mlx`、具体仓库 ID，以及 GPU 设备。没有 `DmlExecutionProvider`，也没有找不到 `llama.dll` 的异常。
-2. SenseVoice：约 5 秒中文，预热后 RTF 小于 0.3，文本非空、可读。第二次不该再付一次编译税。
-3. Qwen3-ASR：约 10 秒中文，预热后 RTF 小于 0.5，带标点。`model_backend=onnx` 不在本条里，本条必须是 MLX。
-4. 右 Option 听写，松开后文字出现在「文本编辑」。不使用 root。
-5. 一个短视频或 wav 经文件转录或 `batch_transcribe.py` 得到非空 `.srt` 和 `.txt`。srt 时间轴单调。日志能看出时间来自对齐器。
-6. 拔掉麦克风权限、或 MLX 权重目录不存在时，进程给出可操作的错误，而不是 `kernel32` / `windll` 的 AttributeError。
-7. Windows 上现有 `DML` 配置和 `win32_event_filter` 仍在。Mac 的依赖 marker 没有把 `onnxruntime-directml` 装回 Darwin。
+活的清单在文首。做完一条就勾一条，不要在这里再写一套说法。
 
 RTF 用管道里已经打印的那一个。数字是 M1 及更新芯片上的验收线；测完把机型、内存、第一次和第二次的墙钟时间记进测试笔记。上游「10 秒约 70 毫秒」只是 SenseVoice 的参考，不是本产品的承诺。
 
@@ -149,7 +175,7 @@ RTF 用管道里已经打印的那一个。数字是 M1 及更新芯片上的验
 
 脚本已经是 [batch_transcribe.py](batch_transcribe.py)，本轮移植不重写它。它复用文件转录那条流，不导出整条 WAV，也不为每个文件新开客户端。服务端没开时拉起 `start_server.py`。两个成品都有效才跳过。失败隔离。报告只写路径和错误。
 
-Mac 上批量「能用」的定义是：服务端按第 11 节用 MLX 起来之后，这条脚本不用改调用方式。
+Mac 上批量「能用」的定义是：服务端勾上 A3 之后，这条脚本不用改调用方式，并满足 A8。
 
 ## 13. 风险
 

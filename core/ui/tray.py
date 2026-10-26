@@ -51,7 +51,7 @@ def _check_tray_available() -> bool:
         return _tray_available
     
     # 非 Windows 系统不支持
-    if platform.system() != 'Windows':
+    if platform.system() not in ('Windows', 'Darwin'):
         _tray_available = False
         return False
     
@@ -108,7 +108,11 @@ _lock = threading.Lock()
 
 
 def _get_console_hwnd():
+    if platform.system() != 'Windows':
+        return None
     _init_win_api()
+    if kernel32 is None or user32 is None:
+        return None
     hwnd = kernel32.GetConsoleWindow()
     if hwnd:
         # 在 Windows Terminal 中，GetConsoleWindow 返回的是内部窗口句柄。
@@ -325,6 +329,9 @@ class _TraySystem:
         t_tray = threading.Thread(target=self.icon.run, daemon=False)
         t_tray.start()
 
+        if not self.hwnd:
+            return
+
         # 状态监控线程
         t_monitor = threading.Thread(target=self.monitor_loop, daemon=True)
         t_monitor.start()
@@ -360,17 +367,18 @@ def enable_min_to_tray(name: Optional[str] = None, icon_path: Optional[str] = No
         return
 
     # DPI 感知设置
-    try:
-        import ctypes
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except Exception:
-        pass
+    if platform.system() == 'Windows':
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            pass
 
     with _lock:
         if _tray_instance is not None:
             return  # 已启动
 
-        if not _get_console_hwnd():
+        if platform.system() == 'Windows' and not _get_console_hwnd():
             return  # 没有控制台窗口
 
         _tray_instance = _TraySystem(name, icon_path, more_options)

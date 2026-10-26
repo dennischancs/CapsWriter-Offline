@@ -9,8 +9,9 @@ LLM 获取选中文字功能
 5. 判断内容是否变化，返回选中的文字
 """
 import time
+import sys
 import pyclip
-import keyboard
+from core.client.output.platform_keys import copy_selection
 from . import logger
 from .llm_clipboard import safe_paste
 
@@ -42,7 +43,7 @@ def get_selected_text(role_config, state) -> str:
         original_clipboard = safe_paste()
 
         # 模拟 Ctrl+C 复制选中的文字
-        keyboard.press_and_release('ctrl+c')
+        copy_selection()
 
         # 等待复制操作完成
         time.sleep(0.1)
@@ -77,6 +78,12 @@ def get_selected_text(role_config, state) -> str:
 
     except Exception as e:
         logger.warning(f"获取选中文字失败: {e}")
+        if sys.platform == 'darwin':
+            try:
+                from core.ui.toast import toast
+                toast("没有辅助功能权限，无法读取选中文字", duration=5000)
+            except Exception:
+                pass
         return ""
 
 

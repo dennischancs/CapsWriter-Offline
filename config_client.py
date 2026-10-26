@@ -1,9 +1,10 @@
 import os
+import sys
 from collections.abc import Iterable
 from pathlib import Path
 
 # 版本信息
-__version__ = '2.7'
+__version__ = '2.8.0'
 
 # 项目根目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,9 +33,21 @@ class ClientConfig:
         },
     ]
 
+    # macOS 不吞噬 CapsLock。右 Option 按不住时，用户改这里，不要改回 caps_lock。
+    darwin_shortcuts = [
+        {
+            'key': 'alt_r',
+            'type': 'keyboard',
+            'suppress': False,
+            'hold_mode': True,
+            'enabled': True
+        },
+    ]
+
     threshold    = 0.3          # 快捷键触发阈值（秒）
 
     paste        = False        # 是否以写入剪切板然后模拟 Ctrl-V 粘贴的方式输出结果
+    darwin_paste = True         # macOS 默认粘贴。Windows 仍读上面的 paste
     restore_clip = True         # 模拟粘贴后是否恢复剪贴板
     paste_apps   = ['WeiXin.exe', 'Telegram.exe']  # 匹配时强制粘贴
 
@@ -86,6 +99,20 @@ class ClientConfig:
     udp_control = False             # 是否启用 UDP 控制录音（外部程序发送 START/STOP 命令）
     udp_control_addr = '127.0.0.1'  # UDP 控制监听地址（'0.0.0.0' 允许外部访问）
     udp_control_port = 6018         # UDP 控制监听端口
+
+
+def active_shortcuts():
+    """Darwin 读 darwin_shortcuts，其它平台读 CapsLock 那组。"""
+    if sys.platform == 'darwin':
+        return ClientConfig.darwin_shortcuts
+    return ClientConfig.shortcuts
+
+
+def active_paste():
+    """Darwin 默认粘贴。不改写 Windows 的 paste 默认值。"""
+    if sys.platform == 'darwin':
+        return ClientConfig.darwin_paste
+    return ClientConfig.paste
 
 
 # 快捷键配置说明

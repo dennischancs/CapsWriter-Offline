@@ -11,13 +11,13 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Optional
 
-from config_client import ClientConfig as Config
+from config_client import ClientConfig as Config, active_paste
 from core.client.state import console
 from core.protocol import RecognitionMessage
 
 from core.client.output.text_output import TextOutput
 from core.tools.window_detector import get_active_window_info
-import keyboard
+from core.client.output.platform_keys import press_enter, pressed_key_names
 from . import logger
 
 from core.client.udp.udp_broadcaster import broadcast_output_udp
@@ -45,7 +45,7 @@ def _estimate_tokens(text: str) -> int:
 async def _auto_enter(delay: float) -> None:
     """延迟发送回车键"""
     await asyncio.sleep(delay)
-    keyboard.press_and_release('enter')
+    press_enter()
     logger.debug(f"自动回车已发送 (延迟 {delay}s)")
 
 
@@ -144,13 +144,7 @@ class ResultProcessor:
         用于调试按键卡住问题。
         """
         try:
-            import keyboard
-            
-            # 获取所有当前按下的键
-            pressed_keys = keyboard._pressed_events
-            
-            # if pressed_keys:
-            key_names = list(pressed_keys.keys())
+            key_names = pressed_key_names()
             logger.debug(f"当前按下的键: {key_names}")
                 
         except Exception as e:
@@ -256,7 +250,7 @@ class ResultProcessor:
                 logger.debug(f"潜在热词: {log_str}")
 
         # 窗口兼容性检测
-        paste = Config.paste
+        paste = active_paste()
         process_name = get_active_window_info().get('process_name', '')
         logger.debug(f"当前活动窗口: {process_name}")
         if any(app.lower() == process_name.lower() for app in Config.paste_apps):

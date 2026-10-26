@@ -104,10 +104,17 @@ class TaskPipeline:
                 and stream.result.text.strip()):
                 
                 logger.debug(f"🚩 [Pipeline] 正在对文件分片执行对齐补齐...")
-                align_res = self.aligner.align(audio=samples, text=stream.result.text, language=task.language, offset_sec=0.0)
-                if align_res and align_res.items:
+                try:
+                    align_res = self.aligner.align(audio=samples, text=stream.result.text, language=task.language, offset_sec=0.0)
+                except Exception as align_error:
+                    logger.warning(f"对齐失败，退回按字均分，这不是对齐成功: {align_error}")
+                    align_res = None
+                if align_res and getattr(align_res, 'items', None):
                     stream.result.tokens = [it.text for it in align_res.items]
                     stream.result.timestamps = [it.start_time for it in align_res.items]
+                    logger.info("文件时间轴来自对齐器")
+                else:
+                    logger.warning("对齐没有返回时间，退回按字均分，这不是对齐成功")
 
 
             # 6. 精确 Token 级拼接 (即便没有对齐器，原生支持时间戳的模型也会走这里)
@@ -151,6 +158,8 @@ class TaskPipeline:
                 result.text_accu = result.text
                 chars = list(result.text_accu.replace(' ', ''))
                 if chars and result.duration > 0:
+                    if task.type == 'file':
+                        logger.warning("退回按字均分，这不是对齐成功")
                     t_per_char = result.duration / len(chars)
                     result.tokens, result.timestamps = chars, [i * t_per_char for i in range(len(chars))]
             

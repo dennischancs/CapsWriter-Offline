@@ -2,9 +2,9 @@
 
 ![demo](assets/demo.png)
 
-> **按住 CapsLock 说话，松开就上屏。就这么简单。**
+> **按住 CapsLock（Mac 上是右 Option）说话，松开就上屏。就这么简单。**
 
-**CapsWriter-Offline** 是一个专为 Windows 打造的**完全离线**语音输入工具。
+**CapsWriter-Offline** 是一个**完全离线**语音输入工具。Windows 用 DirectML。Apple Silicon 从源码跑，识别走 MLX / Metal。
 
 ## ✨ 核心特性
 
@@ -40,6 +40,8 @@
 | Fun-ASR-Nano | 2.0s | 0.5s |
 | Qwen3-ASR-1.7B | 4.0s | 1.0s |
 
+Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` 里的 MLX 权重。上表的 ONNX + GGUF 和 DirectML 仍是 Windows 的路径。
+
 详细功能说明请参考 [`docs/`](docs/) 目录：
 - [环境依赖安装说明](docs/环境依赖安装说明.md) — VC++ 运行库、FFmpeg 安装
 - [热词功能如何使用](docs/热词功能如何使用.md) — 热词替换、规则替换、自定义短语
@@ -54,10 +56,11 @@
 
 ## 💻 平台支持
 
-目前**仅能保证在 Windows 10/11 (64位) 下完美运行**。
+目前保证：
 
+- **Windows 10/11 (64位)**：DirectML、CapsLock 长按抑制，和原来一样。
+- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。
 - **Linux**：暂无环境进行测试和打包，无法保证兼容性。
-- **MacOS**：由于底层的 `keyboard` 库已放弃支持 MacOS，且系统限制极多，暂时无法支持。
 
 [LazyTyper](https://lazytyper.com/) 和 [闪电说](https://shandianshuo.cn/) 也是很优秀的作品，都有离线引擎，都支持 Windows Linux 与 MacOS，并都有漂亮的图形化页面，推荐使用。
 

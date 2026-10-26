@@ -10,6 +10,7 @@
 """
 import asyncio
 import platform
+import sys
 from contextlib import contextmanager
 import pyclip
 from pynput import keyboard
@@ -121,15 +122,23 @@ async def paste_text(text: str, restore_clipboard: bool = True):
     logger.debug(f"已复制文本到剪贴板，长度: {len(text)}")
 
     # 粘贴结果（使用 pynput 模拟 Ctrl+V）
-    controller = keyboard.Controller()
-    if platform.system() == 'Darwin':
-        # macOS: Command+V
-        with controller.pressed(keyboard.Key.cmd):
-            controller.tap('v')
-    else:
-        # Windows/Linux: Ctrl+V
-        with controller.pressed(keyboard.Key.ctrl):
-            controller.tap('v')
+    try:
+        controller = keyboard.Controller()
+        if platform.system() == 'Darwin':
+            with controller.pressed(keyboard.Key.cmd):
+                controller.tap('v')
+        else:
+            with controller.pressed(keyboard.Key.ctrl):
+                controller.tap('v')
+    except Exception as exc:
+        logger.warning(f"粘贴失败，文字留在提示里: {exc}")
+        if sys.platform == 'darwin':
+            try:
+                from core.ui.toast import toast
+                toast(text or "没有辅助功能权限，文字没有上屏", duration=8000)
+            except Exception:
+                pass
+        return
     
     logger.debug("已发送粘贴命令 (Ctrl+V)")
 

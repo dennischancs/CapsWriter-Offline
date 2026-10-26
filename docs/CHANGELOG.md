@@ -1,5 +1,12 @@
 # 更新日志
 
+## v2.8.0
+
+- **Apple Silicon**：M 系列可以从源码跑。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX / Metal。`model_backend=onnx` 时 SenseVoice 试 CoreML，失败再退 CPU。Paraformer 和缺标点时的标点模型同样能开 CoreML 就开。Intel Mac 除外。
+- 听写默认按住右 Option，松开后粘贴，不吞噬 CapsLock。没有麦克风权限时提示去系统设置，进程不退出。没有辅助功能权限时文字留在提示里。
+- Windows 的 DirectML、CapsLock 抑制和 `nvidia-smi` 锁频率保持原样。Mac 上跳过锁频率。
+- 验证：`python3 -m unittest discover -s tests -p 'test_*.py'`，22 项通过。真机听写、RTF 和系统权限这次没有跑。
+
 ## v2.7
 
 - **批量转录**：新增 `batch_transcribe.py`。对文件夹递归转录音视频，在同目录留下同名 `.srt` 和 `.txt`。已有有效字幕和文本的文件会跳过；单个失败不影响后续文件。默认走现有的流式文件转录，不再先导出整段 WAV。

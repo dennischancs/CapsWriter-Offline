@@ -1,4 +1,5 @@
 # coding: utf-8
+import sys
 from typing import Any, Dict, Type, Optional
 from .base import BaseASREngine, BasePuncEngine, BaseAlignEngine
 from config_server import (
@@ -47,9 +48,45 @@ class EngineFactory:
     }
 
     @staticmethod
+    def use_mlx_backend(platform, model_backend, model_type) -> bool:
+        if platform != 'darwin':
+            return False
+        if model_type == 'paraformer':
+            return False
+        backend = (model_backend or 'auto').lower()
+        if backend == 'onnx':
+            return False
+        if backend not in ('auto', 'mlx'):
+            return False
+        return model_type in ('sensevoice', 'fun_asr_nano', 'qwen_asr')
+
+    @staticmethod
+    def use_mlx_aligner(platform, model_backend) -> bool:
+        if platform != 'darwin':
+            return False
+        return (model_backend or 'auto').lower() != 'onnx'
+
+    @staticmethod
+    def _create_mlx_engine(model_type: str) -> BaseASREngine:
+        if model_type == 'sensevoice':
+            from .mlx.sensevoice import SenseVoiceMLXEngine
+            return SenseVoiceMLXEngine()
+        if model_type == 'fun_asr_nano':
+            from .mlx.funasr import FunASRMLXEngine
+            return FunASRMLXEngine()
+        if model_type == 'qwen_asr':
+            from .mlx.qwen import QwenMLXEngine
+            return QwenMLXEngine()
+        raise ValueError(f"EngineFactory: 不支持的 MLX ASR 类型 '{model_type}'")
+
+    @staticmethod
     def create_asr_engine(model_type: str) -> BaseASREngine:
         """创建 ASR 核心引擎"""
         model_type = model_type.lower()
+        backend = getattr(Config, 'model_backend', 'auto')
+        if EngineFactory.use_mlx_backend(sys.platform, backend, model_type):
+            # MLX 失败不能静默改去加载 Windows DLL。
+            return EngineFactory._create_mlx_engine(model_type)
         if model_type not in EngineFactory._ASR_LOADERS:
             raise ValueError(f"EngineFactory: 不支持的 ASR 类型 '{model_type}'")
 
@@ -78,6 +115,17 @@ class EngineFactory:
     @staticmethod
     def create_align_engine() -> BaseAlignEngine:
         """创建对齐引擎 (目前使用 Qwen Force Aligner)"""
+        backend = getattr(Config, 'model_backend', 'auto')
+        if EngineFactory.use_mlx_aligner(sys.platform, backend):
+            try:
+                from .mlx.aligner import MlxAlignEngine
+                return MlxAlignEngine()
+            except Exception as e:
+                from . import logger
+                logger.warning(
+                    f"MLX 对齐器加载失败: {e}\n将退回按字均分，这不是对齐成功。\n"
+                )
+                return BaseAlignEngine(None)
         try:
             from .force_aligner_gguf.align_engine import QwenForceAligner, AlignerConfig
             align_cfg_data = {

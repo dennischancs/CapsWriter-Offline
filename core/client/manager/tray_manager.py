@@ -31,20 +31,28 @@ class TrayManager:
         icon_path = os.path.join(self.app.base_dir, 'assets', 'icon.ico')
         
         # 启用托盘
+        menu = [
+            ('📋 复制结果', self._copy_last_result),
+            ('📁 日记', self._open_diary),
+            ('📝 上下文', self._add_context),
+            ('✨ 热词', self._add_hotword),
+            ('🧹 清除记忆', self._clear_memory),
+            ('♻️ 重开音频', self._restart_audio),
+        ]
+        if sys.platform == 'darwin':
+            menu.insert(0, ('📂 日志', self._open_logs))
         enable_min_to_tray(
             'CapsWriter Client',
             icon_path,
             exit_callback=self.app.stop,
-            more_options=[
-                ('📋 复制结果', self._copy_last_result),
-                ('📁 日记', self._open_diary),
-                ('📝 上下文', self._add_context),
-                ('✨ 热词', self._add_hotword),
-                ('🧹 清除记忆', self._clear_memory),
-                ('♻️ 重开音频', self._restart_audio),
-            ]
+            more_options=menu
         )
         logger.info("托盘图标已启用")
+
+    def _open_logs(self):
+        folder = os.path.join(self.app.base_dir, 'logs')
+        os.makedirs(folder, exist_ok=True)
+        subprocess.Popen(['open', folder])
 
     def stop(self):
         """停止托盘图标"""

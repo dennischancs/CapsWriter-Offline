@@ -1,7 +1,13 @@
 from pathlib import Path
 import json
+import sys
 import numpy as np
-import onnxruntime as ort
+from core.server.engines.ort_session import (
+    create_ort_session,
+    effective_provider,
+    fixed_pad_seconds,
+    uses_fixed_shape,
+)
 
 class SenseVoiceEncoder:
     def __init__(self, encoder_path: str, onnx_provider="cpu", dml_pad_to: int = 30):
@@ -14,26 +20,11 @@ class SenseVoiceEncoder:
         # 2. 初始化会话 (职责下放：稳健的 Provider 选择逻辑)
         
         # 3. 初始化会话 (职责下放：稳健的 Provider 选择逻辑)
-        available_providers = ort.get_available_providers()
-        providers = ['CPUExecutionProvider']
-        
-        if self.onnx_provider in ('TRT', 'TENSORRT') and 'TensorrtExecutionProvider' in available_providers:
-            providers.insert(0, ('TensorrtExecutionProvider', {
-                'trt_fp16_enable': True,
-                'trt_engine_cache_enable': True,
-                'trt_engine_cache_path': Path(self.model_path).parent / 'trt_cache',
-            }))
-        elif self.onnx_provider == 'DML' and 'DmlExecutionProvider' in available_providers:
-            providers.insert(0, 'DmlExecutionProvider')
-        elif self.onnx_provider == 'CUDA' and 'CUDAExecutionProvider' in available_providers:
-            providers.insert(0, 'CUDAExecutionProvider')
-        
-        session_opts = ort.SessionOptions()
-        session_opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        session_opts.add_session_config_entry("session.inter_op.allow_spinning", "0")
-        session_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        
-        self.session = ort.InferenceSession(str(encoder_path), providers=providers, sess_options=session_opts)
+        effective, warning = effective_provider(self.onnx_provider, sys.platform)
+        if warning:
+            print(f"[Encoder] {warning}")
+        self.onnx_provider = effective
+        self.session = create_ort_session(str(encoder_path), self.onnx_provider)
         
         # 3. 从 Metadata 加载内部配置 (配置全内置模式)
         meta = self.session.get_modelmeta().custom_metadata_map
@@ -54,9 +45,10 @@ class SenseVoiceEncoder:
         self.input_dtype = np.float16 if 'float16' in in_type else np.float32
 
         # 5. DML 策略设置 (仅在 DML 模式下生效)
-        self.use_dml = (self.onnx_provider.lower() == "dml")
-        self.fixed_len = int(dml_pad_to * 17) # 1s ≈ 17帧 LFR
-        if self.use_dml and isinstance(dml_pad_to, int) and dml_pad_to > 0:
+        self.use_dml = uses_fixed_shape(self.onnx_provider)
+        pad_seconds = fixed_pad_seconds(self.onnx_provider, dml_pad_to)
+        self.fixed_len = int(pad_seconds * 17) # 1s ≈ 17帧 LFR
+        if self.use_dml and pad_seconds > 0:
             self.warmup()
 
     def warmup(self):

@@ -5,10 +5,18 @@ GPU 加速管理模块
 """
 
 import subprocess
+import sys
 import time
 import ctypes
 from config_server import ServerConfig as Config
 from . import logger
+
+
+def locks_gpu_clock(platform=None) -> bool:
+    """nvidia-smi 锁频率只在 Windows 上有意义。Darwin 直接跳过。"""
+    if platform is None:
+        platform = sys.platform
+    return platform == 'win32'
 
 
 class GpuBoostManager:
@@ -27,6 +35,9 @@ class GpuBoostManager:
         """处理 GPU 加速命令任务。"""
         if task.command != 'gpu_boost':
             return
+        if not locks_gpu_clock():
+            logger.info('当前系统跳过 nvidia-smi 锁频率')
+            return
         if not self._check_admin():
             logger.warning("非管理员权限，无法执行 GPU 加速命令")
             return
@@ -42,7 +53,7 @@ class GpuBoostManager:
 
     def check_idle(self):
         """GPU 闲置超时检查，超时则取消加速。"""
-        if not Config.gpu_boost_enabled or not self.state.gpu_boosted:
+        if not locks_gpu_clock() or not Config.gpu_boost_enabled or not self.state.gpu_boosted:
             return
         # gpu_last_active = 0 表示刚加速但尚未被实际音频任务使用，不取消
         if self.state.gpu_last_active <= 0:

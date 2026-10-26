@@ -8,12 +8,12 @@
     - **Client**: 轻量启动，负责全局快捷键监听、录音采集、UI 展示。
 - **源代码开放**: 入口 [`start_server.py`](start_server.py) / [`start_client.py`](start_client.py) 为冻结入口；核心源码在 [`core/`](core/) 目录，发行版保留为源码供用户修改。
 - **配置化**: [`config_client.py`](config_client.py) / [`config_server.py`](config_server.py) 及 `hot*.txt`、[`LLM/*.py`](LLM/) 位于根目录。
-- **版本**: v2.7（2026-10-26）
+- **版本**: v2.8.0（2026-10-27）
 
 ## 架构细节与流程 (Architecture & Workflows)
 
 ### 1. 识别全链路 (Recognition Flow)
-- **采集**: Client 监听快捷键（默认 CapsLock 和 X2）。按下就开始收集录音chunk，超过 **0.3s (Threshold)** 不松则触发识别，**实时流式**通过 WebSocket 发送。
+- **采集**: Windows 默认监听 CapsLock 和 X2。Apple Silicon 默认按住右 Option，不吞噬 CapsLock。按下就开始收集录音chunk，超过 **0.3s (Threshold)** 不松则触发识别，**实时流式**通过 WebSocket 发送。
 - **切片 (Slicing)**: Client 配置 `mic_seg_duration` (60s) 和 `mic_seg_overlap` (4s)。Server 仅基于时间切片，**禁用 VAD** 以保留完整上下文。
 - **Server 处理**:
     - **双重结果**: 同时计算 `text` (简单文本拼接, Robust) 和 `text_accu` (基于 Token 时间戳去重, Precision)。
