@@ -56,13 +56,13 @@ class SenseVoiceEncoder:
         dummy_lfr = np.random.randn(1, self.fixed_len, 560).astype(self.input_dtype)
         dummy_mask = np.ones((1, self.fixed_len), dtype=self.input_dtype)
         dummy_prompt = np.zeros((1, 4, 560), dtype=self.input_dtype)
-        print(f"[Encoder] DML 推理模式：正在使用形状为 {dummy_lfr.shape} 的 {self.fixed_len//17}s 随机数据进行预热...")
+        print(f"[Encoder] {self.onnx_provider} 推理模式：正在使用形状为 {dummy_lfr.shape} 的 {self.fixed_len//17}s 随机数据进行预热...")
         self.session.run(None, {
             "speech_feat": dummy_lfr,
             "mask": dummy_mask,
             "prompt_ids": np.zeros((1, 4), dtype=np.int64)
         })
-        print("[Encoder] DML 预热完成。")
+        print(f"[Encoder] {self.onnx_provider} 预热完成。")
 
     def construct_prompt(self, lid="auto", itn=True):
         """构造 4 个 Prompt Token ID"""

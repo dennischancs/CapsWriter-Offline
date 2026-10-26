@@ -1,5 +1,5 @@
 # coding: utf-8
-# Windows 的 DML 保持原样。Darwin 上 DML/CUDA 改成 CoreML，失败再退 CPU。
+# Windows 的 DML 保持原样。Darwin 上 CPU/DML/CUDA 先改成 CoreML，会话创建失败再退 CPU。
 import sys
 from pathlib import Path
 
@@ -7,7 +7,8 @@ from pathlib import Path
 def effective_provider(requested, platform=None):
     platform = platform if platform is not None else sys.platform
     name = (requested or 'CPU').upper()
-    if platform == 'darwin' and name in ('DML', 'CUDA'):
+    # 配置里的默认值是 CPU。Darwin 上 SenseVoice 仍要先试 CoreML，失败再由会话创建退回 CPU。
+    if platform == 'darwin' and name in ('CPU', 'DML', 'CUDA'):
         return 'COREML', 'Darwin 上把 %s 改成 COREML' % name
     return name, None
 

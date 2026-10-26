@@ -38,9 +38,9 @@ class SenseVoiceDecoder:
         """执行一次全量形状推理，触发 CTC Head 算子特化"""
         # CTC Decoder 的输入形状通常是 (1, T_plus_4, 512)
         dummy_enc = np.zeros((1, self.fixed_len, 512), dtype=self.input_dtype)
-        print(f"[Decoder] DML 推理模式：正在使用形状为 {dummy_enc.shape} 的数据进行预热...")
+        print(f"[Decoder] {self.onnx_provider} 推理模式：正在使用形状为 {dummy_enc.shape} 的数据进行预热...")
         self.session.run(None, {"enc_out": dummy_enc})
-        print("[Decoder] DML 预热完成。")
+        print(f"[Decoder] {self.onnx_provider} 预热完成。")
 
     def forward(self, enc_out):
         """

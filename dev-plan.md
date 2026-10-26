@@ -6,7 +6,7 @@
 
 识别、合并、热词 RAG、协议、批量脚本不动。要动的是依赖怎么按平台拆、引擎工厂在 Darwin 上创建哪一个类、Win32 输入和托盘怎么分支。
 
-待办就是 [prd.md](prd.md) 文首的验收清单，不另建任务表。下面各阶段只说明为了勾上哪一条。2.8.0 已勾上 A3 到 A8，以及不下载权重就能证明的 Windows 依赖和 readme。A1、A2 要人在「文本编辑」和系统权限里看。A9 要本机有 SenseVoice 的 ONNX 权重。都没有勾，也不要当成已经听写成功。
+待办就是 [prd.md](prd.md) 文首的验收清单，不另建任务表。下面各阶段只说明为了勾上哪一条。2.8.0 已勾上 A3 到 A9，以及不下载权重就能证明的 Windows 依赖和 readme。A1、A2 要人在「文本编辑」和系统权限里看，没有勾，也不要当成已经听写成功。
 
 ## 1. 加速分工
 
@@ -142,7 +142,7 @@ model_backend = 'auto'          # auto | mlx | onnx
 qwen_mlx_variant = 'auto'       # auto | 0.6b | 1.7b
 ```
 
-`auto` 在 Darwin 上是 `mlx`，在 Windows 上是 `onnx`。Darwin 上如果有人把 `onnx_provider` 留成 `DML` 或 `CUDA`，只有 `model_backend=onnx` 时才改写成 `COREML` 并警告。不要在 MLX 路径里改这个字段。
+`auto` 在 Darwin 上是 `mlx`，在 Windows 上是 `onnx`。Darwin 上只有 SenseVoice 的 `model_backend=onnx` 会创建这条 ONNX 会话：`onnx_provider` 留着默认的 `CPU`，也会和 `DML`、`CUDA` 一样先改写成 `COREML` 并警告。Windows 上不改。不要在 MLX 路径里改这个字段。Fun-ASR 和 Qwen 的 ONNX 半边不走这个改写，不能拿来当作退路已经可用。
 
 `gpu_boost_enabled` 在 Darwin 上忽略。
 
@@ -191,12 +191,12 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 `ort_session.py` 只做三件事：
 
 1. `COREML` 映射成 `CoreMLExecutionProvider` 加 `CPUExecutionProvider`。选项名以装上的 `onnxruntime` 文档为准，预期包括 `MLComputeUnits=ALL`、静态形状、缓存目录 `~/Library/Caches/CapsWriter/coreml`。
-2. Darwin 上见到 `DML` 或 `CUDA` 时改成 `COREML` 并警告。Windows 上 `DML` 保持原样。
+2. Darwin 上见到 `CPU`、`DML` 或 `CUDA` 时改成 `COREML` 并警告。配置默认值就是 `CPU`，不改的话 CoreML 不会被尝试。Windows 上 `CPU` 和 `DML` 保持原样。
 3. CoreML 创建失败就只用 CPU 再建一次。一条模型失败不影响别的模型。
 
 谁调用它：
 
-- `model_backend=onnx` 时的 SenseVoice、Fun、Qwen、对齐器编码器。Fun / Qwen / 对齐器的 GGUF 半边在 Mac 上仍然没有 Metal 库，所以这条退路对它们是不完整的。文档写明：Mac 上的 ONNX 退路只保证 SenseVoice。Fun 和 Qwen 要可用就用 MLX。
+- 真正接上的是 SenseVoice 的编码器和解码器，而且只在 `model_backend=onnx` 时创建。Fun / Qwen / 对齐器仍用各自的 provider 选择，GGUF 半边在 Mac 上没有 Metal 库，不能用它们的输出证明这条退路。Mac 上的 ONNX 退路只保证 SenseVoice。Fun 和 Qwen 要可用就用 MLX。
 - Paraformer：创建 sherpa `OfflineRecognizer` 时，若当前版本文档有 `provider='coreml'` 就传入，捕获异常后不带 provider 再试一次。
 - 标点：同样。只有引擎没有 `PUNC` 时才会加载，MLX 主路径不会碰到。
 
@@ -239,8 +239,9 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 
 ### 阶段 5：勾 A9
 
-- `ort_session.py` 和 SenseVoice ONNX 的调用点。
+- `ort_session.py` 和 SenseVoice ONNX 的调用点。Darwin 上默认 `CPU` 也会先改成 CoreML。
 - Paraformer / 标点能开 CoreML 就开。
+- 2026-10-27 已在 Mac mini M4 上用现有 fp16 ONNX 跑通。会话提供者是 CoreML，文本非空。强制创建失败后退回 CPU。Fun-ASR 和 Qwen 没有参与这次交差。
 
 ### 阶段 6：勾 A11
 
