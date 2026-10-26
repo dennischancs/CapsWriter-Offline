@@ -82,8 +82,8 @@ class FileTranscriber:
         
         return True
     
-    async def send(self) -> None:
-        """发送音频数据到服务端 (异步流式处理)"""
+    async def send(self) -> bool:
+        """发送音频数据到服务端 (异步流式处理)。失败返回 False，不再让接收端空等。"""
         
         self.task_id = str(uuid.uuid1())
         console.print(f'\n任务标识：{self.task_id}')
@@ -98,13 +98,16 @@ class FileTranscriber:
         
         # 2. 启动 FFmpeg 进程
         ffmpeg_cmd = MediaTool.build_ffmpeg_cmd(self.file)
-        
+        progress = 0.0
+        self._ffmpeg_proc = None
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *ffmpeg_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL
             )
+            self._ffmpeg_proc = process
             
             # 分块大小：1分钟音频 (16000 * 4 * 60 bytes)
             chunk_size = 16000 * 4 * 60
@@ -152,26 +155,31 @@ class FileTranscriber:
             if not await self._ws_manager.send(final_message):
                 raise ConnectionError("结束标志发送失败")
             await process.wait()
+            if process.returncode not in (0, None):
+                logger.error(f"ffmpeg 退出码 {process.returncode}: {self.file}")
+                return False
             
             if self._audio_duration == 0:
                 self._audio_duration = progress 
                 console.print(f'    音频长度：{self._audio_duration:.2f}s')
 
             logger.debug("音频数据发送完成")
+            return True
             
         except ConnectionError as e:
             logger.error(f"发送数据失败: {e}, 文件: {self.file}")
             if 'process' in locals() and process.returncode is None:
                 process.terminate()
-            return
+            return False
         except Exception as e:
             logger.error(f"转录发送异常: {e}", exc_info=True)
             if 'process' in locals() and process.returncode is None:
                 process.terminate()
-            return
+            return False
     
-    async def receive(self) -> None:
+    async def receive(self) -> bool:
         """接收转录结果"""
+        message = None
         
         try:
             while True:
@@ -185,10 +193,14 @@ class FileTranscriber:
                     break
         except ConnectionError as e:
             logger.error(f"{e}, 文件: {self.file}")
-            return
+            return False
         except Exception as e:
             logger.error(f"接收消息错误: {e}")
-            return
+            return False
+
+        if message is None:
+            logger.error(f"未收到最终结果: {self.file}")
+            return False
 
         # 应用热词并同步 tokens
         self._apply_hotwords(message)
@@ -204,6 +216,7 @@ class FileTranscriber:
             f"转录完成: {self.file}, 处理耗时: {process_duration:.2f}s, "
             f"文本长度: {len(text_display)}"
         )
+        return True
 
     def _apply_hotwords(self, message: RecognitionMessage) -> None:
         """对识别结果应用热词替换并同步 tokens"""

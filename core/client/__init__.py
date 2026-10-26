@@ -23,8 +23,14 @@ from core.logger import get_logger, setup_logger
 setup_logger('client', level=Config.log_level)
 logger = get_logger('client')
 
-# 门面类
-from core.client.app import CapsWriterClient
+# 门面类延迟导入。批量转录和文件转录只需要子模块，
+# 不能在 import core.client.* 时拉起快捷键（macOS 上会碰到 Win32 专用导入）。
+def __getattr__(name):
+    if name == 'CapsWriterClient':
+        from core.client.app import CapsWriterClient
+        return CapsWriterClient
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     'CapsWriterClient',

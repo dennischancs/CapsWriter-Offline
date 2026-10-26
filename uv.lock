@@ -44,7 +44,7 @@ wheels = [
 
 [[package]]
 name = "capswriter-offline"
-version = "2.5.0a0"
+version = "2.7.0"
 source = { virtual = "." }
 dependencies = [
     { name = "colorama" },

@@ -1,0 +1,298 @@
+# 开发计划：Apple Silicon 用 MLX，CoreML 只作退路
+
+配套需求见 [prd.md](prd.md)。基线是 `latest` @ `84912d5`。
+
+上一版计划写过「MLX 不进第一期，Mac 用 CoreML Execution Provider + llama.cpp Metal」。那个判断过时了，作废。主线改为：Darwin 上四个主模型进 MLX，Metal 由 MLX 使用；CoreML 只留给没有 MLX 端口的 ONNX；不为 macOS 编译或分发 llama.cpp b10621。
+
+识别、合并、热词 RAG、协议、批量脚本不动。要动的是依赖怎么按平台拆、引擎工厂在 Darwin 上创建哪一个类、Win32 输入和托盘怎么分支。
+
+## 1. 加速分工
+
+| 现在 | Darwin 主路径 | 退路 | 明确不做 |
+| --- | --- | --- | --- |
+| SenseVoice ONNX | `mlx_audio.stt.load` 加载 `models/mlx/SenseVoiceSmall` | 现有 fp16 ONNX + `CoreMLExecutionProvider`，再失败才 CPU | 把 SenseVoice 再导出成 `.mlpackage` 当默认 |
+| Fun-ASR-Nano ONNX + GGUF | MLX 整模 `Fun-ASR-Nano-2512` | 无。失败就这个 `model_type` 报错，不静默去加载 Windows DLL | llama.cpp Metal 动态库 |
+| Qwen3-ASR ONNX + GGUF | MLX 8bit，1.7B 或 0.6B | 1.7B 内存失败时改 0.6B，只一次 | 把 GGUF 转成 CoreML |
+| ForcedAligner ONNX + GGUF | MLX `Qwen3-ForcedAligner-0.6B-8bit` | 对齐失败时管道原有的按字均分，日志标明 | 用 Qwen 的粗片段时间冒充字级时间 |
+| Paraformer、CT-Transformer | sherpa-onnx。轮子支持 `provider=coreml` 就用，否则 CPU | CPU | 引入 OminiX 的 Rust crate，或为标点重写模型 |
+| `nvidia-smi` 锁频率 | Darwin 跳过 | 无 | 找一个 Apple 的锁频接口 |
+
+客户端不加载 MLX。Metal / CoreML 只发生在服务端 worker 里，和现在模型不进客户端的切分一致。
+
+不要同时依赖 `mlx-audio` 和 `mlx-qwen3-asr`。前者已经覆盖这四个模型。只有中文对齐探针达不到阶段 0 的中文对齐标准时，才允许把对齐器单独换成 `mlx-qwen3-asr` 的 ForcedAligner，ASR 仍留在 `mlx-audio`。
+
+## 2. 库：替换、留下、不要引进
+
+### 按平台拆开的依赖
+
+`pyproject.toml` 改成 marker，不要为了 Mac 去改 Windows 锁里的 directml 版本。
+
+```toml
+"onnxruntime-directml; sys_platform == 'win32'",
+"onnxruntime; sys_platform == 'darwin' and platform_machine == 'arm64'",
+"mlx; sys_platform == 'darwin' and platform_machine == 'arm64'",
+"mlx-audio[stt]; sys_platform == 'darwin' and platform_machine == 'arm64'",
+"huggingface_hub; sys_platform == 'darwin' and platform_machine == 'arm64'",
+"pywin32; sys_platform == 'win32'",
+"keyboard; sys_platform == 'win32'",
+```
+
+`uv.lock` 今天解不开 Mac。Darwin 另给 `requirements-macos.txt`，或在 arm64 轮子齐全之后单独生成锁。`onnxruntime` 只为 CoreML 退路和 Paraformer / 标点存在，默认听写不 import 它。
+
+`huggingface_hub` 用来把权重下到 `models/mlx/<名字>/`。下载完成后 `load(本地目录)`，断网仍可启动。不要把唯一副本留在 `~/.cache/huggingface`。
+
+### 留下
+
+| 依赖 | 原因 |
+| --- | --- |
+| `sherpa-onnx` | Paraformer 和 CT-Transformer。MLX 主路径不 import 它 |
+| `numpy`、`soundfile`、`sounddevice`、`websockets` | 波形、麦克风、协议 |
+| `pynput`、`pyclip`、`pystray`、`Pillow` | Mac 上的按键、粘贴、菜单栏 |
+| `srt`、`pypinyin`、`rapidfuzz`、`numba` | 字幕和热词。`numba` 没有 arm64 / cp314 轮子时走已有的纯 Python 分支，不换库 |
+| `nagisa`、`soynlp` | 对齐器的日文 / 韩文分词，依赖已在 |
+
+### 不要引进
+
+| 库 | 原因 |
+| --- | --- |
+| `mlx-audio-plus` | Fun-ASR 的 fp16 卡提到过它。先用 `mlx-audio` 的 `load()`。探针加载失败再考虑，不预装两套 |
+| `mlx-qwen3-asr` | 同上，只在对齐器中文探针失败时作为对齐器的替换 |
+| `mlx-audio-swift`、`mlx-swift-asr` | Swift 参考实现，不是这个 Python 产品的运行时 |
+| OminiX Rust 组件 | 进程模型整个换掉，接不进 `BaseASREngine` |
+| `keyboard` 的 Mac 安装 | 需要 root，README 已经放弃 |
+| 新的 llama.cpp 源码树 | 主线不编译。只在第 8 节的应急里出现 |
+
+### Python 版本
+
+阶段 0 在本机看 `mlx`、`mlx-audio`、`onnxruntime`、`sherpa-onnx` 有没有 macOS arm64 的 cp314 轮子。有就用 3.14。没有就用 3.13，还没有再用 3.12。Windows 继续 3.14。不要为了迁就 Mac 把 `requires-python` 降下去，除非维护者决定全仓库统一。
+
+## 3. 重构什么，新建什么，别动什么
+
+### 新建：MLX 适配层
+
+只新增这些文件，不把 MLX 调用散落到现有 ONNX 引擎里：
+
+| 文件 | 职责 |
+| --- | --- |
+| `core/server/engines/mlx/loader.py` | 按本地目录 `load` 一次，按仓库 ID 缓存。打印 `backend=mlx` 和默认设备。设备不是 GPU 就警告 |
+| `core/server/engines/mlx/audio.py` | 把管道里的 float32、16 kHz 波形交给模型。`generate` 能收数组就不要写临时 wav；只能收路径时，用完即删 |
+| `core/server/engines/mlx/sensevoice.py` | 实现 `BaseASREngine`。能力：`ASR`、`PUNC`。不声明 `TIMESTAMPS`，不声明 `HOTWORDS` |
+| `core/server/engines/mlx/fun_asr.py` | 能力：`ASR`、`PUNC`、`HOTWORDS`。`update_hotwords` 和 `context` 合成 `generate` 的 context |
+| `core/server/engines/mlx/qwen_asr.py` | 能力：`ASR`、`PUNC`。不把片段 `start/end` 写进 `timestamps` |
+| `core/server/engines/mlx/aligner.py` | 实现 `BaseAlignEngine`。把 MLX 的 `text` / `start_time` / `end_time` 收成现有的 `ForcedAlignItem` 列表 |
+| `core/server/engines/ort_session.py` | 仅 ONNX 退路使用。把 `CPU` / `DML` / `CUDA` / `TRT` / `COREML` 收成一处，避免六个编码器各抄一遍 |
+
+`EngineFactory._load_*` 是唯一的平台分叉：
+
+- Darwin 且 `model_backend` 为 `auto` 或 `mlx`：返回 MLX 类。
+- `model_backend=onnx`，或不是 Darwin：返回现在的 ONNX / GGUF 类。
+- `paraformer` 永远走现有 sherpa 类。
+
+`ModelLoader` 里无条件 `import sherpa_onnx` 改成懒加载。只有创建 Paraformer 或标点引擎时才 import。这样 Mac 上只装 MLX 也能听写。
+
+`ManagedAlignerProxy` 继续包住对齐器。`cleanup` 时如果 MLX 提供清缓存的函数就调用，不要每个麦克风分片都清，否则下一句要重新编译。
+
+### 小改，不是重写
+
+| 位置 | 改动 |
+| --- | --- |
+| `core/server/engines/factory.py` | 按上面的规则选类 |
+| `core/server/worker/model_loader.py` | sherpa 懒加载；MLX 引擎不挂标点模型 |
+| `config_server.py` | 增加第 5 节的字段。不删 `DML` / `CUDA` |
+| `config_client.py` | 增加 Darwin 专用快捷键和粘贴开关，不改 Windows 那组默认值 |
+| `core/client/shortcut/key_mapper.py` | `win32` 才 import `KeyTranslator` |
+| `core/client/shortcut/shortcut_manager.py` | Darwin 用 `on_press` / `on_release`。不要传 `win32_event_filter` |
+| `text_output.py`、`result_processor.py`、`llm_output_typing.py`、`llm_get_selection.py` | Darwin 分支改走已经在用的 `pynput`。选区用 Command+C |
+| `core/ui/tray.py` | Darwin 用 `pystray`，不调用 `_init_win_api`。菜单：日志目录、热词、退出 |
+| 六个 ONNX `encoder.py` | 只有退路才改为调用 `ort_session.py`。MLX 默认路径不进这些文件 |
+
+### 不动
+
+- `core/server/merger/`、`core/server/worker/pipeline.py` 的合并和对齐门闩。MLX 引擎不声明 `TIMESTAMPS` 之后，文件任务会自己调用对齐器，麦克风不会。
+- `core/server/engines/sensevoice_onnx/`、`fun_asr_gguf/`、`qwen_asr_gguf/`、`force_aligner_gguf/` 的算法。Windows 继续用。
+- `core/protocol.py`、热词 RAG、`batch_transcribe.py`、ffmpeg 流式发送。
+- `core/client/__init__.py` 里已经做的 `CapsWriterClient` 延迟导入。保留，批量脚本不能再被 `key_mapper` 拖死。
+
+SenseVoice 从「自带 CTC 时间」变成「文件任务走对齐器」，是工厂换引擎之后的结果，不是去改 `pipeline.py`。
+
+## 4. 适配器要守住的合同
+
+`decode_stream` 只填 `stream.result.text`。`tokens` 和 `timestamps` 留空。管道会用文本做听写拼接；文件任务再由对齐器填 token。
+
+对齐器返回的对象必须有 `.items`，元素有 `.text` 和 `.start_time`，单位秒。这是 `TaskPipeline` 已经在读的字段。语言代码继续走 `get_language(ENGINE_ALIGNER, ...)`，不要在适配器里另写一套中英映射。
+
+Fun-ASR 的热词是提示词，不是 CTC 雷达。把 `hot-server.txt` 的词和任务里的 `context` 拼成一段字符串传给 `generate`。传不进去的关键字就丢掉并打一条 warning，不要因此让识别失败。
+
+SenseVoice 的情绪和事件可以放进 `performance` 字典。第一期不展示、不写进字幕。
+
+波形进模型之前确认是单声道 float32、16 kHz。客户端已经按这个格式送。适配器不做重采样以外的音效处理。
+
+MLX 调用留在 worker 进程的识别线程上。不要为 `generate` 再开线程池。服务端现在就是一个任务一个任务做，批量脚本也是串行的。
+
+启动加载成功后，用不超过 0.5 秒的静音或现成短音频跑一次并丢掉文本。这次允许很慢。失败只记日志，不阻止服务启动。
+
+## 5. 配置
+
+`config_server.py` 增加，不替换现有 Windows 字段：
+
+```python
+model_backend = 'auto'          # auto | mlx | onnx
+qwen_mlx_variant = 'auto'       # auto | 0.6b | 1.7b
+```
+
+`auto` 在 Darwin 上是 `mlx`，在 Windows 上是 `onnx`。Darwin 上如果有人把 `onnx_provider` 留成 `DML` 或 `CUDA`，只有 `model_backend=onnx` 时才改写成 `COREML` 并警告。不要在 MLX 路径里改这个字段。
+
+`gpu_boost_enabled` 在 Darwin 上忽略。
+
+Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
+
+- `1.7b`：`mlx-community/Qwen3-ASR-1.7B-8bit`
+- `0.6b`：`mlx-community/Qwen3-ASR-0.6B-8bit`
+- `auto`：`psutil` 看到的总内存大于等于 16GB 用 1.7B，否则 0.6B
+- 加载 1.7B 出现内存错误时改 0.6B，日志写明，只重试一次
+
+`config_client.py` 增加一组 Darwin 值，Windows 默认值原样保留：
+
+- `darwin_shortcuts`：右 Option，`suppress=False`，`hold_mode=True`
+- `darwin_paste = True`
+
+客户端在 Darwin 上读这组，不读 CapsLock 那组。用户要改 Mac 快捷键就改 `darwin_shortcuts`。不要在运行时猜测「用户是不是还没改过默认值」。
+
+`llm_use_gpu` 只对 ONNX / GGUF 有意义。MLX 路径忽略它。没有「MLX 跑在 CPU 上」的正式开关。
+
+## 6. 客户端平台层
+
+快捷键：
+
+- Windows：现有 `win32_event_filter` 和抑制逻辑一行不删。
+- Darwin：`pynput` 的按下 / 松开。按住超过 `threshold` 开始录音，松开停止。做不到系统级吞噬。`suppress=True` 在 Darwin 上打 warning 然后按不抑制处理。
+- 默认键不用 CapsLock。右 Option 不可用时，文档让用户改成 `f8`，代码不自动再挑一个键。
+
+上屏：
+
+- Darwin 默认粘贴，沿用 `clipboard.py` 里已有的 Command+V。
+- 打字输出和自动回车如果还开着，用 `pynput.keyboard.Controller`，不用 `keyboard` 包。
+- LLM 读选区在 Darwin 上发送 Command+C。没辅助功能权限时返回空，并 Toast 说明，不抛未捕获异常。
+
+托盘：
+
+- `tray.py` 现在非 Windows 直接返回不可用。改成 Darwin 可以创建 `pystray` 图标。
+- 所有 `kernel32` / `user32` 留在 `sys.platform == 'win32'` 里面。
+- 打开目录的 `open` 调用，`tray_manager.py` 里已经有，菜单复用它。
+
+`block_mouse_forward.py` 是独立的 Windows 小工具，不参与启动，不用移植。
+
+## 7. CoreML 退路怎么接
+
+默认安装可以带着 `onnxruntime`，但默认 `model_type` 不创建 ORT 会话。
+
+`ort_session.py` 只做三件事：
+
+1. `COREML` 映射成 `CoreMLExecutionProvider` 加 `CPUExecutionProvider`。选项名以装上的 `onnxruntime` 文档为准，预期包括 `MLComputeUnits=ALL`、静态形状、缓存目录 `~/Library/Caches/CapsWriter/coreml`。
+2. Darwin 上见到 `DML` 或 `CUDA` 时改成 `COREML` 并警告。Windows 上 `DML` 保持原样。
+3. CoreML 创建失败就只用 CPU 再建一次。一条模型失败不影响别的模型。
+
+谁调用它：
+
+- `model_backend=onnx` 时的 SenseVoice、Fun、Qwen、对齐器编码器。Fun / Qwen / 对齐器的 GGUF 半边在 Mac 上仍然没有 Metal 库，所以这条退路对它们是不完整的。文档写明：Mac 上的 ONNX 退路只保证 SenseVoice。Fun 和 Qwen 要可用就用 MLX。
+- Paraformer：创建 sherpa `OfflineRecognizer` 时，若当前版本文档有 `provider='coreml'` 就传入，捕获异常后不带 provider 再试一次。
+- 标点：同样。只有引擎没有 `PUNC` 时才会加载，MLX 主路径不会碰到。
+
+`dml_pad_to` 在 CoreML 退路上仍然是固定形状长度。Mac 上这条退路的默认垫长用 8 秒，不要把 Windows 的 30 秒原样编译进 8GB 机器。MLX 路径没有这个垫长。
+
+## 8. 阶段
+
+### 阶段 0：探针
+
+在目标 Mac 上确认四件事，记在测试笔记里，不改产品代码：
+
+1. `mlx`、`mlx-audio` 的轮子和 Python 版本。
+2. `load(本地目录)` 能否接受 numpy 波形；不能的话，临时文件方案就定下来。
+3. Fun-ASR 的 `generate` 是否接受 context / hotwords 关键字。
+4. 一句中文经过 ForcedAligner 后，`start_time` 单调，文字能对上。这一条失败就改用第 1 节允许的对齐器替换，不换 ASR 库。
+
+同时看启动时 MLX 默认设备是不是 GPU。
+
+### 阶段 1：能 import，能起来
+
+- 依赖 marker。
+- `key_mapper`、托盘、`windll` 守卫。
+- Darwin 快捷键和粘贴。
+- 此阶段服务端仍可以是 CPU ONNX SenseVoice。验收是按住右 Option 能上屏，且 Windows 还能启动。
+
+### 阶段 2：SenseVoice MLX
+
+- `loader.py`、`audio.py`、`sensevoice.py`、工厂分叉、权重下载到 `models/mlx/`。
+- 预热、GPU 日志、1.7B 那种重试在这个阶段还用不上。
+- 验收：5 秒中文，预热后 RTF < 0.3，菜单栏听写成功。
+
+### 阶段 3：Qwen 和 Fun
+
+- 两个引擎类、变体选择、内存失败重试、Fun 的 context。
+- 不声明 `TIMESTAMPS`。
+- 验收：Qwen 10 秒中文，预热后 RTF < 0.5，有标点。
+
+### 阶段 4：对齐器和文件
+
+- `aligner.py` 接上 `ManagedAlignerProxy`。
+- 用现有文件转录或 `batch_transcribe.py` 出 `.srt` / `.txt`。
+- 中文时间轴单调。对齐失败时日志里能看出退回了均分，而不是假装成功。
+
+### 阶段 5：CoreML 退路
+
+- `ort_session.py` 和 SenseVoice ONNX 的调用点。
+- Paraformer / 标点能开 CoreML 就开。
+- `model_backend=onnx` 时 SenseVoice 仍能出文本。Fun / Qwen 不承诺这条退路。
+
+### 阶段 6：文档
+
+- `readme.md` 去掉「macOS 不可用」，改成 Apple Silicon 从源码运行，Intel 除外。
+- `docs/环境依赖安装说明.md` 增加 Mac 的 Python、ffmpeg、权限。
+- `docs/显卡加速的若干问题.md` 增加 MLX / Metal 和 CoreML 退路。DirectML 章节保留。
+
+打包 `.app` 不在这六个阶段里。以后做时要签 dylib，权限从「授给终端」变成「授给 .app」。`build.spec` 里的 CUDA DLL 收集不要套到 Mac 上。
+
+## 9. llama.cpp Metal 只是应急，不排期
+
+阶段 0 如果 `mlx` 完全装不上，而用户的 Mac 又必须先听写，才允许临时用现有 ctypes 绑定去加载一份本机编译的 b10621 Metal 库。那不是本计划的交付，不写进依赖，不替代 MLX 任务。SenseVoice 在那种情况下用 ONNX CPU 或 CoreML 即可，它本来就没有 GGUF 半边。
+
+不要为了「两条路都做」把应急写进阶段 2。两套解码器会让 DirectML 回归和 Metal 加载失败混在同一次改动里。
+
+## 10. 测试
+
+沿用 `unittest`。不下载权重的测试：
+
+1. 工厂：Darwin + `auto` 选 MLX 类；Windows + `auto` 选现有类；`model_backend=onnx` 在 Darwin 上仍选 ONNX 类。用假的类替换加载器，不真的 import MLX。
+2. Qwen 变体：16GB 以上选 1.7B，以下选 0.6B；模拟内存错误后只切换一次。
+3. 对齐适配：假的 MLX 结果映射成 `.items[].start_time`，乱序输入在适配器里拒绝或按时间排序后仍单调。
+4. Fun context：热词列表和任务 context 拼进同一次调用参数。
+5. `key_mapper` 在非 Windows 分支不访问 `pynput._util.win32`。可以用 `sys.platform` 的测试替身，或把导入放进函数后直接测函数。
+6. 现有 `python3 -m unittest tests.test_batch_transcribe -v` 继续通过。
+
+要真机、不进 CI 的：
+
+- 文本编辑里按一次右 Option。
+- SenseVoice 与 Qwen 的 RTF。
+- 一条中文音视频的 srt。
+- 关掉麦克风权限后的提示。
+
+Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被 `ort_session.py` 丢掉。
+
+## 11. 建议的提交拆分
+
+1. 依赖 marker + import 守卫 + Darwin 快捷键和粘贴。CPU 听写能闭环。
+2. MLX loader + SenseVoice。
+3. Qwen、Fun、变体和内存重试。
+4. MLX 对齐器。文件和批量出 srt。
+5. `ort_session.py` 与 Paraformer / 标点的 CoreML 退路。
+6. README 和两篇 docs。
+
+每一步都应该在 Windows 上仍能启动。不要把 1 到 4 合成一个改动。
+
+## 12. 批量脚本
+
+[batch_transcribe.py](batch_transcribe.py) 已经按「一条 WebSocket、不预导出整段 WAV、两个成品都有效才跳过」实现。本计划不改它的流程。
+
+它和移植的接口只有一个：服务端要能在 Mac 上被 `start_server.py` 拉起，并且文件任务会因为 MLX 引擎没有 `TIMESTAMPS` 而走到阶段 4 的对齐器。阶段 4 之前，批量可以出文本，字幕时间可能是均分的，不算完成。
+
+`config_client.py` 的 `file_save_srt` 和 `file_save_txt` 保持 True。
