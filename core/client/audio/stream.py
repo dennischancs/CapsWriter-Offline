@@ -25,6 +25,134 @@ if TYPE_CHECKING:
 
 
 
+FALLBACK_OPEN_TIMEOUT = 2.0
+
+
+def _seconds(timeout) -> str:
+    number = float(timeout)
+    if number.is_integer():
+        return str(int(number))
+    return f'{number:.1f}'
+
+
+def input_index_from_default(default_device):
+    """从 sounddevice 的默认设备对里取出输入编号。
+
+    `default.device` 是 `_InputOutputPair`，不是 list 或 tuple。
+    """
+    if default_device is None or isinstance(default_device, (str, bytes, int, float)):
+        value = default_device
+    else:
+        try:
+            value = default_device[0]
+        except (TypeError, KeyError, IndexError):
+            value = default_device
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def list_input_devices(devices):
+    """只保留有输入声道的设备，返回 (编号, 名称, 声道数)。"""
+    found = []
+    if not devices:
+        return found
+    for index, info in enumerate(devices):
+        try:
+            channels = int(info['max_input_channels'])
+            name = info['name']
+        except (KeyError, TypeError, ValueError):
+            continue
+        if channels <= 0:
+            continue
+        found.append((index, str(name), channels))
+    return found
+
+
+def format_input_devices(inputs) -> str:
+    if not inputs:
+        return '无'
+    return '，'.join(
+        f'{index} {name}（{channels} 声道）' for index, name, channels in inputs
+    )
+
+
+def darwin_input_failure_message(default_index, inputs, timeout) -> str:
+    """设备还在时，不要把默认输入 -1 说成没有麦克风权限。"""
+    listing = format_input_devices(inputs)
+    if not inputs:
+        return '没有麦克风权限，或没有可用的输入设备。请到系统设置 > 隐私与安全性 > 麦克风打开权限。'
+    if default_index == -1:
+        return (
+            f'默认输入设备编号是 -1。可用输入：{listing}。'
+            f'这些设备在 {_seconds(timeout)} 秒内都没有打开。'
+            '请到系统设置 > 声音，把输入改成真实麦克风。'
+        )
+    return (
+        f'默认输入打不开（编号 {default_index}）。可用输入：{listing}。'
+        '如果系统拒绝了麦克风，请到系统设置 > 隐私与安全性 > 麦克风允许当前终端。'
+    )
+
+
+def open_with_timeout(open_device, index, channels, timeout):
+    """打开设备。超时后放弃，避免虚拟声卡把客户端卡住。"""
+    holder = {}
+    errors = {}
+    cancelled = threading.Event()
+    lock = threading.Lock()
+
+    def run():
+        try:
+            stream = open_device(index, channels)
+        except Exception as exc:
+            errors['exc'] = exc
+            return
+        with lock:
+            abandon = cancelled.is_set()
+            if not abandon:
+                holder['stream'] = stream
+        if abandon:
+            closer = getattr(stream, 'close', None)
+            if callable(closer):
+                try:
+                    closer()
+                except Exception:
+                    pass
+
+    worker = threading.Thread(target=run, name=f'mic-open-{index}', daemon=True)
+    worker.start()
+    worker.join(timeout)
+    with lock:
+        if worker.is_alive() or 'stream' not in holder:
+            cancelled.set()
+            stream = None
+        else:
+            stream = holder['stream']
+    if stream is not None:
+        return stream, None
+    if 'exc' in errors:
+        return None, errors['exc']
+    return None, 'timeout'
+
+
+def select_fallback_input(devices, open_device, timeout=FALLBACK_OPEN_TIMEOUT):
+    """按编号尝试输入设备。返回 (流, 编号, 名称, 声道) 或 None，以及每次尝试。"""
+    chosen = None
+    attempts = []
+    for index, name, channels in list_input_devices(devices):
+        stream, problem = open_with_timeout(open_device, index, channels, timeout)
+        attempts.append((index, name, problem))
+        if problem == 'timeout':
+            logger.warning(f'打开输入设备 {index} {name} 超过 {_seconds(timeout)} 秒，跳过')
+        elif problem is not None:
+            logger.warning(f'打开输入设备 {index} {name} 失败: {problem}')
+        if stream is not None:
+            chosen = (stream, index, name, min(2, channels))
+            break
+    return chosen, attempts
+
+
 class AudioStreamManager:
     """
     音频流管理器
@@ -110,47 +238,96 @@ class AudioStreamManager:
             logger.debug("音频流已在运行，跳过启动")
             return self.state.stream
 
-        # 检测音频设备
         try:
             device = sd.query_devices(kind='input')
-            self._channels = min(2, device['max_input_channels'])
-            device_name = device.get('name', '未知设备')
-            console.print(
-                f'使用默认音频设备：[italic]{device_name}，声道数：{self._channels}',
-                end='\n\n'
-            )
-            logger.info(f"找到音频设备: {device_name}, 声道数: {self._channels}")
         except UnicodeDecodeError:
             logger.warning("无法获取音频设备名称（编码问题）")
+            return self._open_started_stream(None, self._channels)
         except sd.PortAudioError:
             logger.error("未找到麦克风设备")
             if sys.platform == 'darwin':
-                _darwin_mic_denied("没有麦克风权限，或没有可用的输入设备。请到系统设置 > 隐私与安全性 > 麦克风打开权限。")
-                return None
+                return self._start_darwin_fallback()
             input('按回车键退出')
             sys.exit(1)
 
-        # 创建音频流
+        self._channels = min(2, int(device['max_input_channels']))
+        device_name = device.get('name', '未知设备')
+        console.print(
+            f'使用默认音频设备：[italic]{device_name}，声道数：{self._channels}',
+            end='\n\n'
+        )
+        logger.info(f"找到音频设备: {device_name}, 声道数: {self._channels}")
+        return self._open_started_stream(None, self._channels)
+
+    def _start_darwin_fallback(self) -> Optional[sd.InputStream]:
+        """默认输入打不开时，列出有输入声道的设备，并限时逐个打开。"""
         try:
-            stream = sd.InputStream(
-                samplerate=self.SAMPLE_RATE,
-                blocksize=int(self.BLOCK_DURATION * self.SAMPLE_RATE),
-                device=None,
-                dtype="float32",
-                channels=self._channels,
-                callback=self._audio_callback,
-                finished_callback=self._on_stream_finished,
-            )
-            stream.start()
+            default_device = sd.default.device
+        except Exception as exc:
+            logger.warning(f"读不到默认输入设备: {exc}")
+            default_device = None
+        default_index = input_index_from_default(default_device)
+        try:
+            devices = sd.query_devices()
+        except (sd.PortAudioError, UnicodeDecodeError) as exc:
+            logger.error(f"无法列出音频设备: {exc}")
+            devices = []
 
-            self.state.stream = stream
-            self._running = True
-            logger.debug(
-                f"音频流已启动: 采样率={self.SAMPLE_RATE}, "
-                f"块大小={int(self.BLOCK_DURATION * self.SAMPLE_RATE)}"
+        inputs = list_input_devices(devices)
+        listing = format_input_devices(inputs)
+        if default_index == -1:
+            logger.warning(f"默认输入设备编号是 -1。可用输入：{listing}")
+        else:
+            logger.warning(f"默认输入不可用（编号 {default_index}）。可用输入：{listing}")
+        if not inputs:
+            _darwin_mic_denied(
+                darwin_input_failure_message(default_index, inputs, FALLBACK_OPEN_TIMEOUT)
             )
-            return stream
+            return None
 
+        def open_device(index, channels):
+            return self._build_stream(index, min(2, channels))
+
+        chosen, _attempts = select_fallback_input(
+            devices, open_device, FALLBACK_OPEN_TIMEOUT
+        )
+        if chosen is None:
+            _darwin_mic_denied(
+                darwin_input_failure_message(default_index, inputs, FALLBACK_OPEN_TIMEOUT)
+            )
+            return None
+
+        stream, index, name, channels = chosen
+        self._channels = channels
+        self.state.stream = stream
+        self._running = True
+        logger.info(f"默认输入不可用，改用输入设备 {index} {name}，声道数 {channels}")
+        console.print(
+            f'使用音频设备：[italic]{name}，声道数：{channels}',
+            end='\n\n'
+        )
+        logger.debug(
+            f"音频流已启动: 采样率={self.SAMPLE_RATE}, "
+            f"块大小={int(self.BLOCK_DURATION * self.SAMPLE_RATE)}, 设备={index}"
+        )
+        return stream
+
+    def _build_stream(self, device, channels) -> sd.InputStream:
+        stream = sd.InputStream(
+            samplerate=self.SAMPLE_RATE,
+            blocksize=int(self.BLOCK_DURATION * self.SAMPLE_RATE),
+            device=device,
+            dtype="float32",
+            channels=channels,
+            callback=self._audio_callback,
+            finished_callback=self._on_stream_finished,
+        )
+        stream.start()
+        return stream
+
+    def _open_started_stream(self, device, channels) -> Optional[sd.InputStream]:
+        try:
+            stream = self._build_stream(device, channels)
         except sd.PortAudioError as e:
             logger.error(f"创建音频流失败: {e}", exc_info=True)
             if sys.platform == 'darwin':
@@ -169,6 +346,14 @@ class AudioStreamManager:
         except Exception as e:
             logger.error(f"创建音频流失败: {e}", exc_info=True)
             return None
+
+        self.state.stream = stream
+        self._running = True
+        logger.debug(
+            f"音频流已启动: 采样率={self.SAMPLE_RATE}, "
+            f"块大小={int(self.BLOCK_DURATION * self.SAMPLE_RATE)}"
+        )
+        return stream
 
     def stop(self) -> None:
         """停止音频流"""
