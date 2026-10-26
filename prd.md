@@ -13,6 +13,12 @@
 - [x] 2.7.0 对一个文件夹递归转录音视频，每个文件旁边留下同名 `.srt` 和 `.txt`。两个成品都有效才跳过。一个失败，后面的继续。
 - [x] 2.8.0 Windows 的 DirectML 配置和 CapsLock 抑制还在。Darwin 的依赖不会装上 `onnxruntime-directml`。
 - [x] 2.8.0 `readme.md` 写明 Apple Silicon 可以从源码跑，Intel 除外。DirectML 的说明还在。
+- [x] A3. 服务端日志出现 `backend=mlx`、具体仓库 ID，以及 GPU 设备。看不到 `DmlExecutionProvider`，也看不到找不到 `llama.dll`。
+- [x] A4. SenseVoice 对约 5 秒中文，预热后 RTF 小于 0.3，文本非空可读。第二次不再明显慢于第一次。
+- [x] A5. Qwen3-ASR 对约 10 秒中文，预热后 RTF 小于 0.5，带标点。统一内存低于 16GB，或 1.7B 加载失败时，日志写明改用 0.6B，并且仍然返回文本。
+- [x] A6. 把 `model_type` 改成 `fun_asr_nano` 后，一段中文能返回带标点的文本。热词或 context 进入当次识别。这个模型失败时直接报错，不静默去加载 Windows DLL。
+- [x] A7. 权重在 `models/mlx/`。断网可以再次启动。目录不存在时，错误写明缺哪个目录，而不是 `kernel32` 或 `windll`。
+- [x] A8. 一条中文音视频经文件转录或 `batch_transcribe.py` 得到非空 `.srt` 和 `.txt`。时间轴单调。日志能看出时间来自对齐器。对齐失败时写明退回按字均分，不把均分说成对齐成功。
 
 ### 不做
 
@@ -28,12 +34,6 @@
 
 - [ ] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [ ] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限时提示去系统设置，进程不崩溃。没有辅助功能权限时文字留在 Toast，不上屏。
-- [ ] A3. 服务端日志出现 `backend=mlx`、具体仓库 ID，以及 GPU 设备。看不到 `DmlExecutionProvider`，也看不到找不到 `llama.dll`。
-- [ ] A4. SenseVoice 对约 5 秒中文，预热后 RTF 小于 0.3，文本非空可读。第二次不再明显慢于第一次。
-- [ ] A5. Qwen3-ASR 对约 10 秒中文，预热后 RTF 小于 0.5，带标点。统一内存低于 16GB，或 1.7B 加载失败时，日志写明改用 0.6B，并且仍然返回文本。
-- [ ] A6. 把 `model_type` 改成 `fun_asr_nano` 后，一段中文能返回带标点的文本。热词或 context 进入当次识别。这个模型失败时直接报错，不静默去加载 Windows DLL。
-- [ ] A7. 权重在 `models/mlx/`。断网可以再次启动。目录不存在时，错误写明缺哪个目录，而不是 `kernel32` 或 `windll`。
-- [ ] A8. 一条中文音视频经文件转录或 `batch_transcribe.py` 得到非空 `.srt` 和 `.txt`。时间轴单调。日志能看出时间来自对齐器。对齐失败时写明退回按字均分，不把均分说成对齐成功。
 - [ ] A9. `model_backend=onnx` 时，SenseVoice 仍能出文本，并尝试 CoreML，失败再退 CPU。Fun-ASR 和 Qwen 不靠这条退路交差。
 
 不下载权重的检查用 `python3 -m unittest discover -s tests -p 'test_*.py'`。仓库 `.gitignore` 忽略 `test_*.py`，这些测试留在本地，不入库。真机听写、RTF 和系统权限只有人能看。

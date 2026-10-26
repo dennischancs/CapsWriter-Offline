@@ -24,6 +24,14 @@ ForcedAlignItem, ForcedAlignResult = _align_types()
 REPO_ID = 'mlx-community/Qwen3-ForcedAligner-0.6B-8bit'
 
 
+def align_language(language):
+    # 和 GGUF 对齐器一样：auto 或未知代码退回中文，避免中文被当成按空格分词。
+    if not language:
+        return 'Chinese'
+    mapped = get_language(ENGINE_ALIGNER, str(language).lower())
+    return mapped or 'Chinese'
+
+
 def _row_fields(row):
     if row is None or isinstance(row, (str, bytes)):
         return None
@@ -101,11 +109,7 @@ class MlxAlignEngine(BaseAlignEngine):
         )
 
     def align(self, audio, text, language='Chinese', offset_sec=0.0, **kwargs):
-        lang = language
-        if language:
-            mapped = get_language(ENGINE_ALIGNER, str(language).lower())
-            if mapped:
-                lang = mapped
+        lang = align_language(language)
         array_input, _ = as_model_input(audio, kwargs.get('sample_rate', 16000))
         if hasattr(self.model, 'align'):
             raw = self.model.align(array_input, text=text, language=lang)

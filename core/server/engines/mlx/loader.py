@@ -40,9 +40,20 @@ def release(local_dir):
 
 
 def _warmup(model):
-    silence = np.zeros(1600, dtype=np.float32)
+    silence = np.zeros(16000, dtype=np.float32)
     try:
-        transcribe(model, silence, 16000)
+        generate = getattr(model, 'generate', None)
+        needs_text = False
+        if generate is not None:
+            try:
+                import inspect
+                needs_text = 'text' in inspect.signature(generate).parameters
+            except (TypeError, ValueError):
+                needs_text = False
+        if needs_text:
+            model.generate(silence, text='测', language='Chinese')
+        else:
+            transcribe(model, silence, 16000)
     except Exception as exc:
         logger.warning('MLX 预热失败: %s' % exc)
 

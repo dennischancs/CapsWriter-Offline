@@ -21,9 +21,24 @@ def select_qwen_variant(preference, total_memory_bytes):
 
 
 def is_memory_error(exc):
+    if isinstance(exc, MemoryError):
+        return True
     text = '%s %s' % (type(exc).__name__, exc)
     text = text.lower()
-    keys = ('memoryerror', 'out of memory', 'outofmemory', 'oom', 'insufficient memory')
+    keys = (
+        'memoryerror',
+        'out of memory',
+        'outofmemory',
+        'oom',
+        'insufficient memory',
+        'unable to allocate',
+        'failed to allocate',
+        'cannot allocate',
+        "can't allocate",
+        'attempting to allocate',
+        'allocation failed',
+        'metal::malloc',
+    )
     return any(key in text for key in keys)
 
 
