@@ -1,5 +1,13 @@
 # 更新日志
 
+## v2.8.1
+
+- **会议录音**：约 10 分钟的中文会议，txt 保留标点并分行，不再收成没有标点的一行。srt 有多条，时间单调，最后一条的结束时间不超出音长。
+- **数字**：「五五十套」写成 50套，不再变成 5510。「第三一个」保留成第3一个，不再变成第31个。没有顿号的「三百五百」分成 300 和 500，不再变成 350100。已经分开的多位数字不再被空格粘成一个数。五十五、三百五、二十一个仍然按原来的数字转换。
+- ffmpeg 解码失败时，日志带上 stderr 尾部，不再只剩退出码。
+- 验证：`/tmp/capswriter-macos-test/bin/python -m unittest tests.test_meeting_regressions tests.test_macos_port tests.test_batch_transcribe tests.test_build_support -v`，50 项通过。同一份 605.77 秒 m4a 在临时目录重跑：txt 89 行，srt 89 条，最后结束 605.92 秒。文本里有 50套、第3一个、300、500，没有 5510、第31、350100。`logs/server_latest.log` 是 `backend=mlx repo=mlx-community/Qwen3-ASR-1.7B-8bit`，分片写「文件时间轴来自对齐器」。原录音和对照 txt 没有改。A1、A2 仍然没有人在「文本编辑」里看过。
+- **本地编译**：PyInstaller 6.22.3、Python 3.14.10 重新打出 arm64 Mach-O：`dist/CapsWriter-Offline/start_server`、`start_client`，以及 `dist/CapsWriter-Offline-Client/start_client`。运行目录仍是指向仓库的绝对软链接。`internal` 里有 `libjaccl.dylib` 和 `mlx.metallib`。短跑打包后的服务端，日志是「模型文件检查通过 (qwen_asr, mlx)」和 `backend=mlx repo=mlx-community/Qwen3-ASR-1.7B-8bit device=Device(gpu, 0)`，随后连同子进程关掉，6016 没有继续占用。这不是签名公证的 `.app`。
+
 ## v2.8.0
 
 - **Apple Silicon**：M 系列可以从源码跑。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX / Metal。`model_backend=onnx` 时 SenseVoice 试 CoreML，失败再退 CPU。Paraformer 和缺标点时的标点模型同样能开 CoreML 就开。Intel Mac 除外。

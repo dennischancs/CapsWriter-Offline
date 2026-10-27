@@ -6,7 +6,7 @@
 
 识别、合并、热词 RAG、协议、批量脚本不动。要动的是依赖怎么按平台拆、引擎工厂在 Darwin 上创建哪一个类、Win32 输入和托盘怎么分支。
 
-待办就是 [prd.md](prd.md) 文首的验收清单，不另建任务表。下面各阶段只说明为了勾上哪一条。2.8.0 已勾上 A3 到 A9，以及不下载权重就能证明的 Windows 依赖和 readme。A1、A2 要人在「文本编辑」和系统权限里看，没有勾，也不要当成已经听写成功。
+待办就是 [prd.md](prd.md) 文首的验收清单，不另建任务表。下面各阶段只说明为了勾上哪一条。2.8.0 已勾上 A3 到 A9，以及不下载权重就能证明的 Windows 依赖和 readme。2.8.1 修的是会议录音字幕和口误数字，不是新阶段。A1、A2 要人在「文本编辑」和系统权限里看，没有勾，也不要当成已经听写成功。
 
 ## 1. 加速分工
 
@@ -262,6 +262,14 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 - `check_model` 在 MLX 路径上检查 `models/mlx/` 里的目录。Windows 和 `model_backend=onnx` 仍查原来的 ONNX / GGUF 文件。
 - PyInstaller 会漏掉 `libjaccl.dylib`、`mlx.metallib` 和一部分 MLX Python 文件。`build_support.py` 在收集之后补进 `internal/`。
 - 短跑 `dist/CapsWriter-Offline/start_server` 能过模型检查并写出 `backend=mlx`、`Device(gpu, 0)`。这不是 A1 或 A2。
+
+2026-10-27 修了这份会议录音上能看见的坏结果，版本 2.8.1。A1、A2 仍然没有勾。
+
+- 对齐器只回字。识别文本里的标点会插回 token。605.77 秒录音的 txt 有 89 行，srt 有 89 条，最后结束在 605.92 秒，没有把一条字幕撑过音长。
+- 「五五十套」写成 50套，「第三一个」保留成第3一个，「三百五百」分成 300 和 500。多位数字之间的空格不再粘成一个数。
+- ffmpeg 失败时，日志带上 stderr 尾部，不再只有退出码。
+- 同一天用 `python -m PyInstaller build.spec` 和 `build-client.spec` 重新打出 arm64 Mach-O 的 `start_server`、`start_client` 和客户端包里的 `start_client`。短跑打包后的服务端，模型检查通过，日志是 `backend=mlx` 和 `Device(gpu, 0)`，然后关掉。6016 没有继续占用。
+
 
 
 ## 9. llama.cpp Metal 只是应急，不排期

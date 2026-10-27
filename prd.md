@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.8.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.8.1`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -21,6 +21,7 @@
 - [x] A8. 一条中文音视频经文件转录或 `batch_transcribe.py` 得到非空 `.srt` 和 `.txt`。时间轴单调。日志能看出时间来自对齐器。对齐失败时写明退回按字均分，不把均分说成对齐成功。
 - [x] A9. `model_backend=onnx` 时，SenseVoice 仍能出文本，并尝试 CoreML，失败再退 CPU。Fun-ASR 和 Qwen 不靠这条退路交差。
 - [x] 2.8.0 Darwin 上 `pyinstaller build.spec` 打出 arm64 Mach-O 的 `start_server` 和 `start_client`。运行目录是绝对路径软链接。服务端加载 MLX，日志是 `backend=mlx` 和 GPU。不是签名公证的 `.app`。
+- [x] 2.8.1 约 10 分钟的会议录音，txt 保留标点并分成多行。srt 多条，时间单调，最后结束时间不超出音长。口误「五五十套」不再变成 5510，「第三一个」不再变成第31个，「三百五百」不再变成 350100。ffmpeg 失败时日志带上 stderr 尾部。
 
 ### 不做
 

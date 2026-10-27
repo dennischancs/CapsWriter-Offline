@@ -433,7 +433,8 @@ class TranscribeSession:
         if not await transcriber.check():
             raise RuntimeError('环境或服务端连接检查失败')
         if not await transcriber.send():
-            raise RuntimeError('音频发送失败')
+            detail = getattr(transcriber, 'send_error', '') or '音频发送失败'
+            raise RuntimeError(detail)
         if not await transcriber.receive():
             raise RuntimeError('没有收到最终识别结果')
 

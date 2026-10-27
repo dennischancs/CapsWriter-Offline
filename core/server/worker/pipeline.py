@@ -113,6 +113,14 @@ class TaskPipeline:
                     stream.result.tokens = [it.text for it in align_res.items]
                     stream.result.timestamps = [it.start_time for it in align_res.items]
                     logger.info("文件时间轴来自对齐器")
+                    # 对齐器只回读出来的字。标点还在识别文本里，不插回去的话
+                    # 字幕会收成一条，句末时间按字数撑过音频结尾。
+                    if asr_raw_text.strip():
+                        stream.result.tokens, stream.result.timestamps = sync_tokens_from_text(
+                            stream.result.tokens,
+                            stream.result.timestamps,
+                            asr_raw_text,
+                        )
                 else:
                     logger.warning("对齐没有返回时间，退回按字均分，这不是对齐成功")
 

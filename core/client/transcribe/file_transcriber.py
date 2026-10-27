@@ -29,6 +29,25 @@ if TYPE_CHECKING:
     from core.client.app import CapsWriterClient
 
 
+
+async def _stderr_tail(stream, limit: int = 4000) -> str:
+    """边读边丢掉旧内容，只留 stderr 尾部，避免管道写满把 ffmpeg 堵住。"""
+    if stream is None:
+        return ''
+    data = bytearray()
+    try:
+        while True:
+            block = await stream.read(1024)
+            if not block:
+                break
+            data.extend(block)
+            if len(data) > limit:
+                del data[:-limit]
+    except Exception:
+        pass
+    return bytes(data).decode('utf-8', errors='replace').strip()
+
+
 class FileTranscriber:
     """
     文件转录器
@@ -52,6 +71,7 @@ class FileTranscriber:
         self.file = file
         self.task_id: Optional[str] = None
         self._audio_duration: float = 0.0
+        self.send_error: str = ''
 
     @property
     def state(self) -> ClientState:
@@ -100,14 +120,16 @@ class FileTranscriber:
         ffmpeg_cmd = MediaTool.build_ffmpeg_cmd(self.file)
         progress = 0.0
         self._ffmpeg_proc = None
+        stderr_task = None
 
         try:
             process = await asyncio.create_subprocess_exec(
                 *ffmpeg_cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL
+                stderr=asyncio.subprocess.PIPE,
             )
             self._ffmpeg_proc = process
+            stderr_task = asyncio.create_task(_stderr_tail(process.stderr))
             
             # 分块大小：1分钟音频 (16000 * 4 * 60 bytes)
             chunk_size = 16000 * 4 * 60
@@ -155,8 +177,13 @@ class FileTranscriber:
             if not await self._ws_manager.send(final_message):
                 raise ConnectionError("结束标志发送失败")
             await process.wait()
+            stderr_text = await stderr_task if stderr_task is not None else ''
             if process.returncode not in (0, None):
-                logger.error(f"ffmpeg 退出码 {process.returncode}: {self.file}")
+                self.send_error = MediaTool.ffmpeg_failure_text(
+                    process.returncode, self.file, stderr_text,
+                )
+                logger.error(self.send_error)
+                console.print(f'[red]{self.send_error}[/red]')
                 return False
             
             if self._audio_duration == 0:
@@ -168,13 +195,19 @@ class FileTranscriber:
             
         except ConnectionError as e:
             logger.error(f"发送数据失败: {e}, 文件: {self.file}")
+            self.send_error = f'音频发送失败: {e}'
             if 'process' in locals() and process.returncode is None:
                 process.terminate()
+            if stderr_task is not None and not stderr_task.done():
+                stderr_task.cancel()
             return False
         except Exception as e:
             logger.error(f"转录发送异常: {e}", exc_info=True)
+            self.send_error = f'音频发送失败: {e}'
             if 'process' in locals() and process.returncode is None:
                 process.terminate()
+            if stderr_task is not None and not stderr_task.done():
+                stderr_task.cancel()
             return False
     
     async def receive(self) -> bool:

@@ -24,20 +24,49 @@ _EN_IN_ZH_PATTERN = re.compile(r"""(?ix)
 """)
 
 
-def _merge_parts(words: list[str]) -> str:
-    """合并 ASR 输出的碎片化字母/数字序列
+def _attaches_to_letters(word: str) -> bool:
+    """单字母后面的 FP16 / 16 还是型号，多位纯数字之间的空格不是。"""
+    if not word:
+        return False
+    if word.isdigit():
+        return True
+    return word[0].isalpha() and any(char.isdigit() for char in word)
 
-    处理两种典型碎片：
-    - 全是单字符/数字 → 拼接："C O M F Y" → "COMFY"
-    - 单字母 + 字母开头的词 → 融合："F P16" → "FP16"
+
+def _merge_parts(words: list[str]) -> str:
+    """合并拼出来的字母，但不要把已经分开的数字再粘成一个。
+
+    C O M F Y → COMFY，F P 16 → FP16。
+    5 5 10、350 100 这种是两个数，空格要留着。
     """
     if len(words) <= 1:
         return words[0] if words else ''
-    if all(len(w) == 1 or w.isdigit() for w in words):
-        return ''.join(words)
-    if len(words) == 2 and len(words[0]) == 1 and words[0].isalpha() and words[1][0].isalpha():
-        return words[0] + words[1]
-    return ' '.join(words)
+
+    merged: list[str] = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if len(word) == 1 and word.isalpha():
+            end = index + 1
+            while end < len(words) and len(words[end]) == 1 and words[end].isalpha():
+                end += 1
+            piece = ''.join(words[index:end])
+            if end < len(words) and _attaches_to_letters(words[end]):
+                piece += words[end]
+                end += 1
+            merged.append(piece)
+            index = end
+            continue
+        if len(word) == 1 and word.isdigit():
+            end = index + 1
+            while end < len(words) and len(words[end]) == 1 and words[end].isdigit():
+                end += 1
+            merged.append(''.join(words[index:end]))
+            index = end
+            continue
+        merged.append(word)
+        index += 1
+    return ' '.join(merged)
 
 
 def _replacer(match: Match) -> str:

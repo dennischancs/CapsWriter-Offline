@@ -131,6 +131,11 @@ def _parse_atomic(tokens, i):
                     if j < n and tokens[j].type == 'DIGIT':
                         base += tokens[j].value
                         consumed += 1
+                elif j + 1 < n and tokens[j + 1].type in (
+                    'HUNDRED', 'THOUSAND', 'TEN_THOUSAND',
+                ):
+                    # 三百五百：五是下一个数的开头，不要收成 350。
+                    pass
                 else:
                     base += tens_d * 10
                     consumed += 1

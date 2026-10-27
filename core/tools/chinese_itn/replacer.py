@@ -9,6 +9,11 @@ from .mappings import idioms, fuzzy_regex, value_mapper
 
 _DIGIT_CHARS = {k for k, v in value_mapper.items() if v <= 9}
 _UNIT_CHARS = {k for k, v in value_mapper.items() if v > 9}
+_PURE_DIGIT_CHARS = set('零一二两三四五六七八九幺')
+# 口误把同一个数字说两遍，后面紧跟十百千万：五五十、两两百。
+_STUTTER_BEFORE_UNIT = re.compile(
+    r'([零一二两三四五六七八九幺])\1(?=[十百千万亿])'
+)
 from .patterns import pattern
 from .utils import convert_pure_num, strip_unit
 from .sequence_parser import parse_sequence, tokenize, parse_tokens, _BASIC_NUMERIC_TYPES
@@ -27,6 +32,30 @@ _WAN_TERM = re.compile(r'(?<![一二两三四五六七八九零幺十百千万�
 def _all_numeric(tokens):
     """检查所有 Token 是否为基础数值类型"""
     return all(t.type in _BASIC_NUMERIC_TYPES for t in tokens)
+
+
+def _collapse_stuttered_digit(text):
+    """连续相同的数字字紧挨着单位时，只留一个。五五十 → 五十。"""
+    previous = None
+    while previous != text:
+        previous = text
+        text = _STUTTER_BEFORE_UNIT.sub(r'\1', text)
+    return text
+
+
+def _peel_classifier_yi(text):
+    """三一个里的「一个」是量词。没有十百千时不要把它收成 31个。"""
+    if len(text) < 3 or not text.endswith('个'):
+        return text, ''
+    body = text[:-1]
+    if not body.endswith('一') or len(body) < 2:
+        return text, ''
+    core = body[:-1]
+    if any(char in '十百千万亿点' for char in core):
+        return text, ''
+    if any(char not in _PURE_DIGIT_CHARS for char in core):
+        return text, ''
+    return core, '一个'
 
 
 def _reduce_binary_op(tokens, sep_type, fmt):
@@ -278,7 +307,9 @@ def replace(match):
         if parsed_original == '一' and sign_prefix:
             final = sign_prefix + '1'
         else:
-            tokens = tokenize(parsed_original)
+            parsed_original = _collapse_stuttered_digit(parsed_original)
+            number_text, classifier = _peel_classifier_yi(parsed_original)
+            tokens = tokenize(number_text)
 
             for reducer in [
                 try_reduce_percent,    # 百分比
@@ -288,12 +319,12 @@ def replace(match):
                 try_reduce_range,      # 范围表达式
                 try_reduce_numerical,  # 数值解析
             ]:
-                res = reducer(tokens, parsed_original)
+                res = reducer(tokens, number_text)
                 if res is not None:
-                    final = sign_prefix + res
+                    final = sign_prefix + res + classifier
                     break
             else:
-                final = original
+                final = sign_prefix + parsed_original
 
     if head:
         final = head + final

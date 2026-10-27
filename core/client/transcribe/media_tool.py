@@ -56,6 +56,15 @@ class MediaTool:
         return 0.0
 
     @staticmethod
+    def ffmpeg_failure_text(returncode: int, file: Path, stderr: str) -> str:
+        """ffmpeg 失败时带上 stderr 尾部。只有退出码时看不出是缺解码器还是坏文件。"""
+        lines = [line.strip() for line in (stderr or '').splitlines() if line.strip()]
+        message = f'ffmpeg 退出码 {returncode}: {file}'
+        if lines:
+            message += '\n' + '\n'.join(lines[-12:])
+        return message
+
+    @staticmethod
     def build_ffmpeg_cmd(file: Path) -> List[str]:
         """构建提取音频的 FFmpeg 命令"""
         return [
