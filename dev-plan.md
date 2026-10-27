@@ -328,3 +328,5 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 `config_client.py` 的 `file_save_srt` 和 `file_save_txt` 保持 True。
 
 2026-10-27 版本 2.9.5。控制中心把名字为 CapsWriter 的状态项排在 x=-695。菜单栏空档里的按钮最后停在 x=1095、高 30，左边是空的，右边是麦克风图标，没有盖住。17:20 点这个按钮，菜单里有日志、热词、退出，按 Esc 关闭，没有点「全部退出」。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，81 项通过。A1 的证据仍是 14:24 的客户端日志：辅助功能已允许，前台是「文本编辑」，剪贴板长度 14，已粘贴；日记是「今天天气很好。今天天气很好。」A1、A2 勾上。 同一天用 PyInstaller 6.22.3、Python 3.14.10 重新打出 `dist/CapsWriter-Offline` 的 arm64 `start_server` 和 `start_client`，两个 app 的短版本是 2.9.5。`codesign` 只有 adhoc，没有 TeamIdentifier，不是公证。短跑服务端日志是「模型文件检查通过 (qwen_asr, mlx)」和 `backend=mlx repo=mlx-community/Qwen3-ASR-1.7B-8bit device=Device(gpu, 0)`，6016 继续听着。
+
+2026-10-27 版本 2.9.6。`CapsWriter.app` 和 `CapsWriter Server.app` 双击起不来，也没有托盘，收集目录不再生成这两个目录，已经放在 `dist/CapsWriter-Offline` 里的也删掉。`build.spec` 改为调用 `remove_darwin_apps`。客户端带起服务端时只运行旁边的 `start_server`，旁边只剩 app 时不 `open`。菜单栏仍由 `start_client` 提供。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，83 项通过。

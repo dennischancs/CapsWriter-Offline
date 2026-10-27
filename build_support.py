@@ -1,6 +1,6 @@
 # coding: utf-8
 """PyInstaller spec 的平台分支。Windows 的图标、UPX 和目录联接保持原样。"""
-from os import chmod, makedirs, remove, symlink, walk
+from os import makedirs, remove, symlink, walk
 from os.path import abspath, basename, dirname, exists, islink, join, relpath
 from platform import system
 from shutil import copyfile, rmtree
@@ -131,71 +131,26 @@ def ensure_darwin_mlx_runtime(dest_root, platform_name=None):
     return copied
 
 
+DARWIN_APP_BUNDLES = (
+    'CapsWriter.app',
+    'CapsWriter Server.app',
+)
+
+
 def _project_version():
     import tomllib
     with open(join(dirname(abspath(__file__)), 'pyproject.toml'), 'rb') as handle:
         return tomllib.load(handle)['project']['version']
 
 
-def _launcher_script(target):
-    return (
-        '#!/bin/bash\n'
-        'ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"\n'
-        'exec "$ROOT/%s" "$@"\n' % target
-    )
-
-
-def write_darwin_apps(dest_root, platform_name=None, version=None):
-    """在收集目录旁边放两个未签名的薄启动器。二进制和 internal 留在原地。"""
+def remove_darwin_apps(dest_root, platform_name=None):
+    """删掉收集目录里打不开、也没有托盘的薄启动器。二进制和 internal 不动。"""
     if not is_darwin(platform_name):
         return []
-    if version is None:
-        version = _project_version()
-    specs = (
-        {
-            'folder': 'CapsWriter.app',
-            'executable': 'CapsWriter',
-            'bundle_id': 'offline.capswriter.client',
-            'name': 'CapsWriter',
-            'target': 'start_client',
-            'microphone': 'CapsWriter 需要麦克风来把语音转成文字。',
-        },
-        {
-            'folder': 'CapsWriter Server.app',
-            'executable': 'CapsWriter Server',
-            'bundle_id': 'offline.capswriter.server',
-            'name': 'CapsWriter Server',
-            'target': 'start_server',
-            'microphone': None,
-        },
-    )
-    return [_write_one_app(dest_root, version, spec) for spec in specs]
-
-
-def _write_one_app(dest_root, version, spec):
-    import plistlib
-    app_root = join(dest_root, spec['folder'])
-    contents = join(app_root, 'Contents')
-    mac_dir = join(contents, 'MacOS')
-    makedirs(mac_dir, exist_ok=True)
-    executable = join(mac_dir, spec['executable'])
-    with open(executable, 'w', encoding='utf-8', newline='\n') as handle:
-        handle.write(_launcher_script(spec['target']))
-    chmod(executable, 0o755)
-    plist = {
-        'CFBundleName': spec['name'],
-        'CFBundleDisplayName': spec['name'],
-        'CFBundleIdentifier': spec['bundle_id'],
-        'CFBundleVersion': version,
-        'CFBundleShortVersionString': version,
-        'CFBundleExecutable': spec['executable'],
-        'CFBundlePackageType': 'APPL',
-        'LSUIElement': True,
-        'LSMultipleInstancesProhibited': False,
-        'NSHighResolutionCapable': True,
-    }
-    if spec['microphone']:
-        plist['NSMicrophoneUsageDescription'] = spec['microphone']
-    with open(join(contents, 'Info.plist'), 'wb') as handle:
-        plistlib.dump(plist, handle)
-    return app_root
+    removed = []
+    for name in DARWIN_APP_BUNDLES:
+        path = join(dest_root, name)
+        if exists(path):
+            rmtree(path)
+            removed.append(path)
+    return removed

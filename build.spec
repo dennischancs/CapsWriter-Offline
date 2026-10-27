@@ -16,7 +16,7 @@ from build_support import (
     hiddenimports_for,
     ensure_darwin_mlx_runtime,
     link_runtime_folders,
-    write_darwin_apps,
+    remove_darwin_apps,
     skip_collected_data,
     use_upx,
 )
@@ -316,4 +316,4 @@ if system() == 'Windows':
 # Darwin 不走 mklink。缺的目录跳过，已有的链到绝对路径。Windows 列表不动。
 link_runtime_folders(dest_root)
 ensure_darwin_mlx_runtime(dest_root)
-write_darwin_apps(dest_root)
+remove_darwin_apps(dest_root)

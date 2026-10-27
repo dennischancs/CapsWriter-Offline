@@ -1,5 +1,11 @@
 # 更新日志
 
+## v2.9.6
+
+- **本地编译**：不再生成 `CapsWriter.app` 和 `CapsWriter Server.app`。这两个薄启动器双击起不来，也没有托盘。收集目录只留 `start_client` 和 `start_server`。客户端带起服务端时运行旁边的 `start_server`，不再 `open` 那个 app。菜单栏仍由 `start_client` 提供。不做签名公证。
+- 验证：`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，83 项通过。收集目录里已经没有这两个 app，`start_client` 和 `start_server` 还在。
+
+
 ## v2.9.5
 
 - **菜单栏**：状态项仍使用固定名字 CapsWriter。控制中心把它排到屏幕外时，菜单栏空档里会出现同一个菜单的按钮。这次按钮在 x=1095，紧挨麦克风图标左边，没有盖住它。点开能看到日志、热词和退出，Esc 关掉。

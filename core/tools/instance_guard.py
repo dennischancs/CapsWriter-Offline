@@ -18,6 +18,7 @@ from pathlib import Path
 
 SERVER_MARK = 'capswriter-server'
 CLIENT_MARK = 'capswriter-client'
+# 旧的薄启动器。打包不再生成，拉起时也不 open。全部退出仍认命令行里的 CapsWriter Server。
 SERVER_APP_NAME = 'CapsWriter Server.app'
 CLIENT_APP_NAME = 'CapsWriter.app'
 _STATUS = logging.getLogger('capswriter.instance')
@@ -287,21 +288,21 @@ def enter_client(
 
 
 def launch_server(collect_root, base_dir, spawn=None, notify_fn=None):
-    """旁边有 app 就用 open，不要 open -n。否则拉起二进制或 start_server.py。"""
+    """拉起旁边的 start_server。CapsWriter Server.app 打不开，也没有托盘，目录在也不 open。"""
     root = Path(collect_root)
-    app = root / SERVER_APP_NAME
     binary = root / 'start_server'
     script = Path(base_dir) / 'start_server.py'
     spawn_fn = _default_spawn if spawn is None else spawn
-    if app.is_dir():
-        spawn_fn(['open', str(app)], new_session=False)
-        return 'app'
     if binary.is_file() and os.access(binary, os.X_OK):
         spawn_fn([str(binary)], new_session=True)
         return 'binary'
     if script.is_file():
         spawn_fn([sys.executable, str(script)], new_session=True)
         return 'script'
+    # 只剩下打不开的薄启动器时，不 open。
+    if any((root / name).is_dir() for name in (CLIENT_APP_NAME, SERVER_APP_NAME)):
+        _emit(notify_fn, '没有找到服务端')
+        return 'missing'
     _emit(notify_fn, '没有找到服务端')
     return 'missing'
 

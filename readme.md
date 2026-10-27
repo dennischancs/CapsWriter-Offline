@@ -59,7 +59,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 目前保证：
 
 - **Windows 10/11 (64位)**：DirectML、CapsLock 长按抑制，和原来一样。
-- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。打开客户端会带起没在跑的服务端；再打开一次不会再加载一份模型。本地编译目录里还有未签名的 `CapsWriter.app` 和 `CapsWriter Server.app`，不做签名公证。请直接运行收集目录里的 `start_client` 和 `start_server`。用 `open` 打开这两个未签名 app 时，进程会停在动态链接器里，不会开始监听。
+- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。打开客户端会带起没在跑的服务端；再打开一次不会再加载一份模型。本地编译只留 `start_client` 和 `start_server`，不再生成 `CapsWriter.app` 和 `CapsWriter Server.app`。菜单栏由 `start_client` 提供。不做签名公证。
 - **Linux**：暂无环境进行测试和打包，无法保证兼容性。
 
 [LazyTyper](https://lazytyper.com/) 和 [闪电说](https://shandianshuo.cn/) 也是很优秀的作品，都有离线引擎，都支持 Windows Linux 与 MacOS，并都有漂亮的图形化页面，推荐使用。
