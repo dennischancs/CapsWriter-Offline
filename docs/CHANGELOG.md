@@ -1,5 +1,11 @@
 # 更新日志
 
+## v2.9.3
+
+- **辅助功能**：启动时如果没有辅助功能权限，会请系统把当前程序列进「隐私与安全性 > 辅助功能」。开关不会被程序打开。
+- 验证：`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，77 项通过。测试用假的系统接口，没有弹出授权框。系统设置里辅助功能列表当时没有 `start_client`，终端是关的。PyInstaller 重新打出未签名的 2.9.3。A1、A2 仍然没有勾。
+
+
 ## v2.9.2
 
 - **前台应用**：松开后不再连着三次警告「没有自动化权限」。应用名改由 NSWorkspace 读取，不申请自动化权限。NSWorkspace 不可用时再问 lsappinfo。两边都读不到时，同一进程只警告一次，听写继续。

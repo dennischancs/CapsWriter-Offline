@@ -353,13 +353,18 @@ class ShortcutManager:
         if sys.platform == 'win32':
             return
         try:
-            from core.client.output.platform_keys import darwin_permission_warnings, probe_darwin_permissions
+            from core.client.output.platform_keys import (
+                darwin_permission_warnings,
+                probe_darwin_permissions,
+                prompt_for_accessibility,
+            )
         except Exception as exc:
             logger.warning('无法检查 macOS 权限: %s' % exc)
             return
         ax_trusted, listen_trusted = probe_darwin_permissions()
         for message in darwin_permission_warnings(ax_trusted, listen_trusted):
             logger.warning(message)
+        prompt_for_accessibility(ax_trusted)
 
     def stop(self) -> None:
         """停止所有监听器和清理资源"""

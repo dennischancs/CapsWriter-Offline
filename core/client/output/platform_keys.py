@@ -69,6 +69,21 @@ def darwin_permission_subject(platform_name=None, frozen=None, argv0=None, execu
     return '当前终端'
 
 
+def prompt_for_accessibility(ax_trusted):
+    """辅助功能被拒绝时，请系统把当前进程列进列表。不改开关。"""
+    if sys.platform != 'darwin' or ax_trusted is not False:
+        return False
+    try:
+        from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+    except Exception:
+        return False
+    try:
+        AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+    except Exception:
+        return False
+    return True
+
+
 def darwin_permission_warnings(ax_trusted, listen_trusted, subject=None):
     """只把明确拒绝的权限写成给人看的句子。查不到接口时不假装被拒绝。"""
     who = darwin_permission_subject() if subject is None else subject
