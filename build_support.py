@@ -37,7 +37,7 @@ def hiddenimports_for(names, platform_name=None):
     if not is_darwin(platform_name):
         return items
     items = [name for name in items if name != 'keyboard']
-    for extra in ('mlx', 'mlx.core', 'mlx_audio', 'mlx_audio.stt'):
+    for extra in ('mlx', 'mlx.core', 'mlx_audio', 'mlx_audio.stt', 'AppKit'):
         if extra not in items:
             items.append(extra)
     return items

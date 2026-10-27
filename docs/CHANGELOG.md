@@ -1,5 +1,11 @@
 # 更新日志
 
+## v2.9.2
+
+- **前台应用**：松开后不再连着三次警告「没有自动化权限」。应用名改由 NSWorkspace 读取，不申请自动化权限。NSWorkspace 不可用时再问 lsappinfo。两边都读不到时，同一进程只警告一次，听写继续。
+- 验证：`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，76 项通过。沙箱外读到前台应用名，没有发出警告。PyInstaller 6.22.3 重新打出 arm64 Mach-O，`CapsWriter.app` 的短版本是 2.9.2，仍然没有签名。`internal/AppKit` 在包里。A1、A2 仍然没有勾。
+
+
 ## v2.9.1
 
 - **空结果**：模型返回的文本是空的时候，终端写「识别结果为空」，不再把整个 `STTOutput(...)` 印出来，录音文件名也不再带上这段对象文本。

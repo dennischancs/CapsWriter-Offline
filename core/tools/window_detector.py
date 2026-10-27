@@ -68,67 +68,97 @@ def _get_windows_window_info() -> dict:
         return {}
 
 
+_front_app_warned = False
+
+
+def _app_record(name: str, bundle: str = '') -> dict:
+    return {
+        'title': '',
+        'class_name': bundle,
+        'process_name': name,
+        'app_name': name,
+    }
+
+
 def _get_macos_window_info() -> dict:
-    """macOS 平台窗口检测"""
-    try:
-        import subprocess
-        from plistlib import loads
-
-        # 使用 AppleScript 获取前台窗口信息
-        script = '''
-        tell application "System Events"
-            set frontApp to name of first application process whose frontmost is true
-            if frontApp contains "Safari" then
-                tell application frontApp
-                    if (count of windows) > 0 then
-                        set windowTitle to name of front window
-                    else
-                        set windowTitle to ""
-                    end if
-                end tell
-            else if frontApp contains "Terminal" then
-                tell application frontApp
-                    if (count of windows) > 0 then
-                        set windowTitle to name of front window
-                    else
-                        set windowTitle to ""
-                    end if
-                end tell
-            else
-                set windowTitle to ""
-            end if
-        end tell
-        return frontApp & "||" & windowTitle
-        '''
-
-        result = subprocess.run(
-            ['osascript', '-e', script],
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode == 0:
-            parts = result.stdout.strip().split('||')
-            app_name = parts[0] if len(parts) > 0 else ""
-            title = parts[1] if len(parts) > 1 else ""
-
-            return {
-                'title': title,
-                'class_name': '',
-                'process_name': app_name,
-                'app_name': app_name
-            }
-        _log_automation_denied()
-    except Exception:
-        _log_automation_denied()
-        pass
-
+    """读前台应用名。不走 System Events，因此不需要自动化权限。"""
+    info = _front_app_from_workspace()
+    if info:
+        return info
+    info = _front_app_from_lsappinfo()
+    if info:
+        return info
+    _warn_front_app_once()
     return {}
 
 
-def _log_automation_denied() -> None:
-    """自动化权限缺失时窗口信息为空，听写继续。不写窗口标题。"""
-    message = '没有自动化权限或无法读取前台应用，窗口信息为空，听写继续'
+def _front_app_from_workspace():
+    """NSWorkspace 能给出显示名，不会弹出自动化授权。"""
+    try:
+        from AppKit import NSWorkspace
+    except Exception:
+        return None
+    try:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+    except Exception:
+        return None
+    if app is None:
+        return None
+    try:
+        name = str(app.localizedName() or '').strip()
+        bundle = str(app.bundleIdentifier() or '')
+    except Exception:
+        return None
+    if not name:
+        return None
+    return _app_record(name, bundle)
+
+
+def _front_app_from_lsappinfo():
+    try:
+        import subprocess
+
+        front = subprocess.run(
+            ['lsappinfo', 'front'],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return None
+    if front.returncode != 0:
+        return None
+    asn = (front.stdout or '').strip()
+    if not asn:
+        return None
+    try:
+        info = subprocess.run(
+            ['lsappinfo', 'info', '-only', 'name', asn],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return None
+    if info.returncode != 0:
+        return None
+    import re
+    match = re.search(r'"LSDisplayName"="([^"]*)"', info.stdout or '')
+    if not match:
+        return None
+    name = match.group(1).strip()
+    if not name:
+        return None
+    return _app_record(name)
+
+
+def _warn_front_app_once() -> None:
+    """同一次进程里只警告一次。听写不依赖窗口信息。"""
+    global _front_app_warned
+    if _front_app_warned:
+        return
+    _front_app_warned = True
+    message = '读不到前台应用，窗口信息为空，听写继续'
     try:
         from core import get_logger
         get_logger('client').warning(message)
