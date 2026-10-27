@@ -54,18 +54,34 @@ def probe_darwin_permissions():
     return _ax_is_trusted(), _listen_event_trusted()
 
 
-def darwin_permission_warnings(ax_trusted, listen_trusted):
+def darwin_permission_subject(platform_name=None, frozen=None, argv0=None, executable=None):
+    """打包后的权限要授给 start_client，源码运行才是当前终端。"""
+    name = sys.platform if platform_name is None else platform_name
+    if name != 'darwin':
+        return '当前终端'
+    is_frozen = getattr(sys, 'frozen', False) if frozen is None else frozen
+    raw = sys.argv[0] if argv0 is None else argv0
+    exe = sys.executable if executable is None else executable
+    from pathlib import Path
+    candidate = Path(str(raw or '')).name or Path(str(exe or '')).name
+    if is_frozen or candidate in ('start_client', 'start_server', 'CapsWriter', 'CapsWriter Server'):
+        return candidate or 'CapsWriter'
+    return '当前终端'
+
+
+def darwin_permission_warnings(ax_trusted, listen_trusted, subject=None):
     """只把明确拒绝的权限写成给人看的句子。查不到接口时不假装被拒绝。"""
+    who = darwin_permission_subject() if subject is None else subject
     messages = []
     if listen_trusted is False:
         messages.append(
             '没有输入监控权限，全局快捷键不生效。'
-            '请到系统设置 > 隐私与安全性 > 输入监控，允许当前终端后重新启动。'
+            f'请到系统设置 > 隐私与安全性 > 输入监控，允许 {who} 后重新启动。'
         )
     if ax_trusted is False:
         messages.append(
             '没有辅助功能权限，松开后文字留在提示里，不会上屏。'
-            '请到系统设置 > 隐私与安全性 > 辅助功能，允许当前终端。'
+            f'请到系统设置 > 隐私与安全性 > 辅助功能，允许 {who}。'
         )
     return messages
 

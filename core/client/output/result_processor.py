@@ -222,9 +222,13 @@ class ResultProcessor:
         hotword_label = f'  热词时延: {hotword_elapsed:.2f}s' if Config.hot else ''
         console.print(f'    转录时延：{delay:.2f}s{hotword_label}')
 
-        # 先显示原始识别结果
-        original_text_stripped = TextOutput.strip_punc(original_text)
-        console.print(f'    识别结果：[green]{original_text_stripped}')
+        # 先显示原始识别结果。空文本不要把结果对象的字符串印出来。
+        original_text_stripped = TextOutput.strip_punc(original_text or '')
+        if str(original_text_stripped).strip():
+            console.print(f'    识别结果：[green]{original_text_stripped}')
+        else:
+            console.print('    [yellow]识别结果为空[/yellow]')
+            logger.info('识别结果为空')
 
         # 如果发生了热词替换，显示替换后的结果
         if original_text_stripped != text:

@@ -27,15 +27,15 @@ def as_model_input(samples, sample_rate=16000):
 
 
 def result_text(result):
+    """取出识别文本。空文本保持为空，不要把整个结果对象印出来。"""
     if result is None:
         return ''
     if isinstance(result, str):
         return result
-    text = getattr(result, 'text', None)
-    if text:
-        return str(text)
-    if isinstance(result, dict) and result.get('text'):
-        return str(result['text'])
+    if isinstance(result, dict):
+        return str(result.get('text') or '')
+    if hasattr(result, 'text'):
+        return str(getattr(result, 'text') or '')
     return str(result)
 
 

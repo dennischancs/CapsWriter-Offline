@@ -27,7 +27,15 @@ if TYPE_CHECKING:
     from core.client.state import ClientState
     from core.client.app import CapsWriterClient
 
-# 日志记录器
+# 低于这个峰值就当成静音。数字静音大约是 -90 dB，正常说话远高于 -60 dB。
+SILENCE_PEAK = 1e-3
+
+
+def peak_amplitude(data) -> float:
+    array = np.asarray(data)
+    if array.size == 0:
+        return 0.0
+    return float(np.max(np.abs(array)))
 
 
 class AudioRecorder:
@@ -52,6 +60,7 @@ class AudioRecorder:
         self._file_manager: Optional[AudioFileManager] = None
         self._start_time: float = 0.0
         self._duration: float = 0.0
+        self._peak: float = 0.0
         self._cache: list = []
 
     @property
@@ -93,6 +102,7 @@ class AudioRecorder:
 
             self._start_time = 0.0
             self._duration = 0.0
+            self._peak = 0.0
             self._cache = []
             
             # 音频文件管理
@@ -129,6 +139,7 @@ class AudioRecorder:
                         self._cache.clear()
                     else:
                         data = task['data']
+                    self._peak = max(self._peak, peak_amplitude(data))
                     
                     # 保存音频至本地文件
                     self._duration += len(data) / 48000
@@ -157,6 +168,7 @@ class AudioRecorder:
                         data = np.concatenate(self._cache)
                         self._cache.clear()
                         
+                        self._peak = max(self._peak, peak_amplitude(data))
                         self._duration += len(data) / 48000
                         if Config.save_audio and self._file_manager:
                             self._file_manager.write(data)
@@ -183,6 +195,11 @@ class AudioRecorder:
                     
                     console.print(f'任务标识：{self.task_id}')
                     console.print(f'    录音时长：{self._duration:.2f}s')
+                    if self._duration > 0 and self._peak < SILENCE_PEAK:
+                        console.print('    [yellow]这段录音是静音，识别结果会是空的[/yellow]')
+                        logger.warning(
+                            f"录音是静音，峰值 {self._peak:.3g}，任务ID: {self.task_id}"
+                        )
                     logger.info(f"录音任务完成，任务ID: {self.task_id}, 时长: {self._duration:.2f}s")
                     
                     # 告诉服务端音频片段结束了

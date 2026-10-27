@@ -78,6 +78,40 @@ def format_input_devices(inputs) -> str:
     )
 
 
+_VIRTUAL_INPUT_MARKERS = (
+    'virtual',
+    'blackhole',
+    'soundflower',
+    'loopback',
+    'teams audio',
+    'zoom',
+    'aggregate',
+    'cable',
+)
+
+
+def input_looks_virtual(name) -> bool:
+    folded = str(name).casefold()
+    return any(marker in folded for marker in _VIRTUAL_INPUT_MARKERS)
+
+
+def virtual_input_warning(chosen_name, inputs) -> str:
+    """选中的是虚拟声卡时，说明它不会录到人声。"""
+    physical = [item for item in inputs if not input_looks_virtual(item[1])]
+    if not physical:
+        return (
+            f'{chosen_name} 不是麦克风。可用输入里没有麦克风，'
+            '录进去的是静音，识别结果会是空的。'
+            '请接上麦克风，或到系统设置 > 声音更换输入。'
+        )
+    names = '，'.join(f'{index} {name}' for index, name, _channels in physical)
+    return (
+        f'正在使用 {chosen_name}，这不是麦克风。'
+        f'麦克风 {names} 没有打开。'
+        '请到系统设置 > 声音更换输入。'
+    )
+
+
 def darwin_input_failure_message(default_index, inputs, timeout) -> str:
     """设备还在时，不要把默认输入 -1 说成没有麦克风权限。"""
     listing = format_input_devices(inputs)
@@ -243,10 +277,11 @@ class AudioStreamManager:
         except UnicodeDecodeError:
             logger.warning("无法获取音频设备名称（编码问题）")
             return self._open_started_stream(None, self._channels)
-        except sd.PortAudioError:
-            logger.error("未找到麦克风设备")
+        except sd.PortAudioError as exc:
             if sys.platform == 'darwin':
+                logger.warning(f"默认输入设备打不开: {exc}")
                 return self._start_darwin_fallback()
+            logger.error("未找到麦克风设备")
             input('按回车键退出')
             sys.exit(1)
 
@@ -306,6 +341,10 @@ class AudioStreamManager:
             f'使用音频设备：[italic]{name}，声道数：{channels}',
             end='\n\n'
         )
+        if input_looks_virtual(name):
+            warning = virtual_input_warning(name, inputs)
+            logger.warning(warning)
+            console.print(f'[yellow]{warning}[/yellow]\n')
         logger.debug(
             f"音频流已启动: 采样率={self.SAMPLE_RATE}, "
             f"块大小={int(self.BLOCK_DURATION * self.SAMPLE_RATE)}, 设备={index}"
