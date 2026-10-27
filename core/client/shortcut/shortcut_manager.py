@@ -354,17 +354,15 @@ class ShortcutManager:
             return
         try:
             from core.client.output.platform_keys import (
-                darwin_permission_warnings,
                 probe_darwin_permissions,
-                prompt_for_accessibility,
+                request_denied_permissions,
             )
         except Exception as exc:
             logger.warning('无法检查 macOS 权限: %s' % exc)
             return
         ax_trusted, listen_trusted = probe_darwin_permissions()
-        for message in darwin_permission_warnings(ax_trusted, listen_trusted):
-            logger.warning(message)
-        prompt_for_accessibility(ax_trusted)
+        logger.debug('macOS 权限探测: 辅助功能=%s 输入监控=%s' % (ax_trusted, listen_trusted))
+        request_denied_permissions(ax_trusted, listen_trusted, log=logger.warning)
 
     def stop(self) -> None:
         """停止所有监听器和清理资源"""

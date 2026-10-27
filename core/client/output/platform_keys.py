@@ -1,6 +1,7 @@
 # coding: utf-8
 # Darwin 用 pynput 上屏。Windows 仍用 keyboard 包。
 import sys
+import threading
 
 
 class AccessibilityDenied(PermissionError):
@@ -78,10 +79,77 @@ def prompt_for_accessibility(ax_trusted):
     except Exception:
         return False
     try:
-        AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+        granted = bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True}))
     except Exception:
         return False
+    prompt_for_accessibility.last_granted = granted
     return True
+
+
+def prompt_for_listen_events(listen_trusted):
+    """输入监控被拒绝时，请系统把当前进程列进列表。不改开关。"""
+    if sys.platform != 'darwin' or listen_trusted is not False:
+        return False
+    try:
+        import Quartz
+    except Exception:
+        return False
+    request = getattr(Quartz, 'CGRequestListenEventAccess', None)
+    if request is None:
+        return False
+    try:
+        granted = bool(request())
+    except Exception:
+        return False
+    prompt_for_listen_events.last_granted = granted
+    return True
+
+
+_prompted = False
+
+
+def request_denied_permissions(ax_trusted, listen_trusted, log=None):
+    """写出被拒绝的权限，并在主线程请求系统列出本程序。不改开关。"""
+    if log is not None:
+        for message in darwin_permission_warnings(ax_trusted, listen_trusted):
+            log(message)
+    if sys.platform != 'darwin':
+        return False
+    _invoke_on_main(lambda: _ask_for_denied_permissions(ax_trusted, listen_trusted, log))
+    return True
+
+
+def _ask_for_denied_permissions(ax_trusted, listen_trusted, log):
+    global _prompted
+    if _prompted:
+        return
+    _prompted = True
+    if ax_trusted is False or listen_trusted is False:
+        _activate_for_permission_prompt()
+    if prompt_for_accessibility(ax_trusted) and log is not None:
+        log('已请求系统把本程序列进辅助功能。列表里出现后，开关仍要自己打开。')
+    if prompt_for_listen_events(listen_trusted) and log is not None:
+        log('已请求系统把本程序列进输入监控。列表里出现后，开关仍要自己打开。')
+
+
+def _activate_for_permission_prompt():
+    try:
+        from AppKit import NSApplication
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+    except Exception:
+        return
+
+
+def _invoke_on_main(func):
+    """权限对话框必须在主线程跑。麦克风线程直接调，系统经常不列出程序。"""
+    if threading.current_thread() is threading.main_thread():
+        func()
+        return
+    try:
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(func)
+    except Exception:
+        func()
 
 
 def darwin_permission_warnings(ax_trusted, listen_trusted, subject=None):
