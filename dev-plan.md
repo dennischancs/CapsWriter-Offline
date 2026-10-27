@@ -326,3 +326,5 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 它和移植的接口只有一个：服务端要能在 Mac 上被 `start_server.py` 拉起，并且文件任务会因为 MLX 引擎没有 `TIMESTAMPS` 而走到阶段 4 的对齐器。阶段 4 之前，批量可以出文本，字幕时间可能是均分的，不算完成。
 
 `config_client.py` 的 `file_save_srt` 和 `file_save_txt` 保持 True。
+
+2026-10-27 版本 2.9.5。控制中心把名字为 CapsWriter 的状态项排在 x=-695。菜单栏空档里的按钮最后停在 x=1095、高 30，左边是空的，右边是麦克风图标，没有盖住。17:20 点这个按钮，菜单里有日志、热词、退出，按 Esc 关闭，没有点「全部退出」。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，81 项通过。A1 的证据仍是 14:24 的客户端日志：辅助功能已允许，前台是「文本编辑」，剪贴板长度 14，已粘贴；日记是「今天天气很好。今天天气很好。」A1、A2 勾上。

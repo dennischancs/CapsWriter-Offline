@@ -217,6 +217,292 @@ def _create_icon(icon_path: Optional[str] = None):
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
+
+def _status_item_metrics(item):
+    """返回 (x, width)。窗口还没排好时 x 常常是 0，宽度可能是 0。"""
+    try:
+        frame = item.button().window().frame()
+        x = float(frame.origin.x)
+    except Exception:
+        return None
+    width = None
+    try:
+        width = float(frame.size.width)
+    except Exception:
+        pass
+    return x, width
+
+
+def _status_item_origin_x(item):
+    metrics = _status_item_metrics(item)
+    if metrics is None:
+        return None
+    return metrics[0]
+
+
+def _status_item_offscreen(item) -> bool:
+    origin = _status_item_origin_x(item)
+    return origin is not None and origin < 0
+
+
+def _leftmost_visible_status_x():
+    """最靠左、还在屏幕里的菜单栏图标。读不到时返回 None。"""
+    xs = _status_windows_x(name=None, on_screen_only=True)
+    if not xs:
+        return None
+    return min(xs)
+
+
+def _capswriter_status_positions():
+    """控制中心画出来的 CapsWriter 窗口横坐标。按钮自己的 frame 不算。"""
+    return _status_windows_x(name='CapsWriter', on_screen_only=False)
+
+
+def _status_windows_x(name, on_screen_only):
+    try:
+        import Quartz
+    except Exception:
+        return None
+    try:
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionAll,
+            Quartz.kCGNullWindowID,
+        )
+    except Exception:
+        return []
+    found = []
+    for window in windows or []:
+        if window.get('kCGWindowLayer') != 25:
+            continue
+        title = window.get('kCGWindowName') or ''
+        if name is not None and title != name:
+            continue
+        bounds = window.get('kCGWindowBounds') or {}
+        try:
+            x = float(bounds.get('X', 0))
+            width = float(bounds.get('Width', 0))
+            height = float(bounds.get('Height', 0))
+        except Exception:
+            continue
+        if width < 8 or height <= 0 or height > 80:
+            continue
+        if on_screen_only and x < 0:
+            continue
+        found.append(x)
+    return found
+
+
+_fallback_icon_holder = {}
+_FallbackClick = None
+
+
+def _fallback_click_class():
+    global _FallbackClick
+    if _FallbackClick is not None:
+        return _FallbackClick
+    import AppKit
+    import objc
+
+    class FallbackClick(AppKit.NSObject):
+        def onClick_(self, sender):
+            icon = _fallback_icon_holder.get('icon')
+            item = getattr(icon, '_status_item', None)
+            if item is None:
+                return
+            try:
+                menu = item.menu()
+            except Exception:
+                menu = None
+            if menu is None:
+                return
+            try:
+                bounds = sender.bounds()
+                menu.popUpMenuPositioningItem_atLocation_inView_(
+                    None,
+                    AppKit.NSPoint(0, bounds.size.height),
+                    sender,
+                )
+            except Exception:
+                logger.debug('不能弹出菜单栏菜单')
+
+    _FallbackClick = FallbackClick
+    return _FallbackClick
+
+
+def _menu_bar_band():
+    """菜单栏那一条的 Cocoa 原点 y 和高度。读不到时按 24 点估。"""
+    import AppKit
+    screen = AppKit.NSScreen.mainScreen()
+    frame = screen.frame()
+    visible = screen.visibleFrame()
+    top = float(visible.origin.y + visible.size.height)
+    height = float(frame.size.height) - top
+    if height < 22.0:
+        try:
+            height = float(AppKit.NSStatusBar.systemStatusBar().thickness())
+        except Exception:
+            height = 24.0
+        top = float(frame.size.height) - height
+    return top, height
+
+
+def _fallback_origin():
+    """放在最左边那个可见图标的左侧。菜单栏装不下时控制中心会把新图标排到屏幕外。"""
+    width = 24.0
+    leftmost = _leftmost_visible_status_x()
+    if leftmost is None:
+        return 24.0, width
+    return max(24.0, leftmost - width - 8.0), width
+
+
+def _hide_menu_bar_fallback(icon) -> None:
+    panel = getattr(icon, '_menu_bar_panel', None)
+    if panel is None:
+        return
+    try:
+        panel.orderOut_(None)
+    except Exception:
+        pass
+
+
+def _show_menu_bar_fallback(icon) -> None:
+    """真状态项在屏幕外时，在菜单栏空档放一个能点的同样菜单。"""
+    import AppKit
+    item = getattr(icon, '_status_item', None)
+    if item is None:
+        return
+    try:
+        image = item.button().image()
+    except Exception:
+        image = None
+    x, width = _fallback_origin()
+    y, height = _menu_bar_band()
+    _fallback_icon_holder['icon'] = icon
+    panel = getattr(icon, '_menu_bar_panel', None)
+    if panel is None:
+        rect = AppKit.NSMakeRect(x, y, width, height)
+        panel = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            rect,
+            AppKit.NSWindowStyleMaskBorderless | AppKit.NSWindowStyleMaskNonactivatingPanel,
+            AppKit.NSBackingStoreBuffered,
+            False,
+        )
+        panel.setOpaque_(False)
+        panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+        panel.setHidesOnDeactivate_(False)
+        panel.setBecomesKeyOnlyIfNeeded_(True)
+        panel.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces
+            | AppKit.NSWindowCollectionBehaviorStationary
+            | AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
+        )
+        button = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, width, height))
+        button.setBordered_(False)
+        button.setImagePosition_(AppKit.NSImageOnly)
+        button.setImageScaling_(AppKit.NSImageScaleProportionallyDown)
+        target = _fallback_click_class().alloc().init()
+        icon._menu_bar_target = target
+        button.setTarget_(target)
+        button.setAction_('onClick:')
+        panel.contentView().addSubview_(button)
+        icon._menu_bar_panel = panel
+        icon._menu_bar_button = button
+    else:
+        panel.setFrame_display_(AppKit.NSMakeRect(x, y, width, height), True)
+        icon._menu_bar_button.setFrame_(AppKit.NSMakeRect(0, 0, width, height))
+    if image is not None:
+        icon._menu_bar_button.setImage_(image)
+    panel.setLevel_(AppKit.NSStatusWindowLevel + 1)
+    panel.orderFrontRegardless()
+    panel.setLevel_(AppKit.NSStatusWindowLevel + 1)
+    frame = panel.frame()
+    shown = (round(float(frame.origin.x)), round(float(frame.origin.y)))
+    if getattr(icon, '_menu_bar_fallback_at', None) != shown:
+        logger.info('菜单栏状态项在屏幕外，改在 x=%.0f y=%.0f 显示', shown[0], shown[1])
+        icon._menu_bar_fallback_at = shown
+
+
+def _reveal_offscreen_status_item(icon) -> str:
+    """控制中心画在屏幕外时，改用菜单栏空档里的按钮。已经在屏幕上就不动。"""
+    positions = _capswriter_status_positions()
+    if positions is None:
+        positions = []
+    on_screen = [x for x in positions if x >= 0]
+    if on_screen:
+        _hide_menu_bar_fallback(icon)
+        logger.info('菜单栏状态项: CapsWriter x=%.0f', min(on_screen))
+        return 'visible'
+    offscreen = bool(positions) or _status_item_offscreen(getattr(icon, '_status_item', None))
+    if not offscreen:
+        return 'wait'
+    _show_menu_bar_fallback(icon)
+    return 'fallback'
+
+
+def _move_status_item_on_screen(icon) -> None:
+    _reveal_offscreen_status_item(icon)
+
+
+def _schedule_status_item_repair(icon) -> None:
+    """创建当下窗口还在 (0, 0)，等主循环把位置排完再查一次。"""
+    if getattr(icon, '_status_repair_scheduled', False):
+        return
+    if _status_item_origin_x(getattr(icon, '_status_item', None)) is None:
+        return
+    try:
+        import AppKit
+    except Exception:
+        return
+
+    def check(timer):
+        try:
+            icon._status_repair_ticks = getattr(icon, '_status_repair_ticks', 0) + 1
+            state = _reveal_offscreen_status_item(icon)
+            if state == 'visible' or icon._status_repair_ticks >= 8:
+                timer.invalidate()
+        except Exception:
+            logger.debug('复查菜单栏位置失败')
+
+    try:
+        icon._status_repair_block = check
+        AppKit.NSTimer.scheduledTimerWithTimeInterval_repeats_block_(0.45, True, check)
+        icon._status_repair_scheduled = True
+    except Exception:
+        logger.debug('不能稍后复查菜单栏位置')
+
+
+def _keep_macos_status_item(icon) -> None:
+    """Darwin 上给状态项固定名字，避免被系统收成隐藏的 Item-N。
+
+    控制中心若把图标排到屏幕外，就在可见图标左侧放一个同样的菜单按钮。
+    """
+    if platform.system() != 'Darwin':
+        return
+    item = getattr(icon, '_status_item', None)
+    if item is None:
+        return
+    try:
+        item.setAutosaveName_('CapsWriter')
+    except Exception:
+        logger.debug('菜单栏状态项不能设置固定名字')
+        return
+    try:
+        item.setVisible_(True)
+    except Exception:
+        pass
+    try:
+        item.button().setHidden_(False)
+    except Exception:
+        pass
+    _move_status_item_on_screen(icon)
+    _schedule_status_item_repair(icon)
+    origin = _status_item_origin_x(getattr(icon, '_status_item', None))
+    if origin is None:
+        logger.info('菜单栏状态项: CapsWriter')
+    else:
+        logger.info('菜单栏状态项: CapsWriter x=%.0f', origin)
+
+
 class _TraySystem:
     """托盘系统内部类"""
     
@@ -253,6 +539,7 @@ class _TraySystem:
             title=f"{self.title}",
             menu=tuple(menu_items)
         )
+        _keep_macos_status_item(self.icon)
 
     def toggle_window(self) -> None:
         """切换窗口显示状态"""
