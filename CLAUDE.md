@@ -8,7 +8,7 @@
     - **Client**: 轻量启动，负责全局快捷键监听、录音采集、UI 展示。
 - **源代码开放**: 入口 [`start_server.py`](start_server.py) / [`start_client.py`](start_client.py) 为冻结入口；核心源码在 [`core/`](core/) 目录，发行版保留为源码供用户修改。
 - **配置化**: [`config_client.py`](config_client.py) / [`config_server.py`](config_server.py) 及 `hot*.txt`、[`LLM/*.py`](LLM/) 位于根目录。
-- **版本**: v2.9.6（2026-10-27）
+- **版本**: v2.10.0（2026-10-27）
 
 ## 架构细节与流程 (Architecture & Workflows)
 
