@@ -1,5 +1,11 @@
 # 更新日志
 
+## v2.10.1
+
+- **本地编译**：`./build-macos.sh` 不再停在没有 PyInstaller 的系统 `python3` 上。它会继续找仓库 `.venv`、`pyinstaller` 旁边的 Python，以及 `python3.14`。找到能 `import PyInstaller` 的才拿来编译。一个都没有时，错误里列出试过的解释器和原因。系统自带的 `python3` 不够，需要带 PyInstaller 的 Python 3.14。
+- 验证：`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，97 项通过。选中的解释器是 `/tmp/capswriter-macos-test/bin/python`。这次没有重跑 PyInstaller。
+
+
 ## v2.10.0
 
 - **本地编译**：Apple Silicon 上用 `./build-macos.sh` 打出 `dist/CapsWriter-Offline` 的 `start_server` 和 `start_client`。只打客户端用 `./build-macos.sh client`。`./clean-macos.sh` 只删除仓库里的 `build` 和 `dist`。这两个程序还被占用时不删除，也不开始编译。`models` 和仓库外的路径不动。仍然不生成 `CapsWriter.app`。

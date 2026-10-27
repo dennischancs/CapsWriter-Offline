@@ -332,3 +332,5 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 2026-10-27 版本 2.9.6。`CapsWriter.app` 和 `CapsWriter Server.app` 双击起不来，也没有托盘，收集目录不再生成这两个目录，已经放在 `dist/CapsWriter-Offline` 里的也删掉。`build.spec` 改为调用 `remove_darwin_apps`。客户端带起服务端时只运行旁边的 `start_server`，旁边只剩 app 时不 `open`。菜单栏仍由 `start_client` 提供。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，83 项通过。
 
 2026-10-27 版本 2.10.0。新增 `build-macos.sh` 和 `clean-macos.sh`。编译走 `macos_build.py`，默认 `build.spec`，参数 `client` 才走 `build-client.spec`。清理只删 `build` 和 `dist`；`dist` 若是指向仓库外的符号链接，只解开链接。`start_server` 或 `start_client` 还被占用时，清理和编译都直接退出。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，93 项通过。这次没有重跑 PyInstaller。
+
+2026-10-27 版本 2.10.1。`./build-macos.sh` 会跳过没有 PyInstaller 的系统 `python3`，依次看 `CAPSWRITER_PYTHON`、仓库 `.venv`、`pyinstaller` 旁边的 Python、`python3.14` / `3.13` / `3.12`，以及 `/opt/homebrew/bin/python3.14`。失败时列出试过的路径。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，97 项通过。选中 `/tmp/capswriter-macos-test/bin/python`。这次没有重跑 PyInstaller。

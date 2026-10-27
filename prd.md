@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.10.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.10.1`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -30,6 +30,7 @@
 - [x] 2.9.5 菜单栏状态项使用固定名字 CapsWriter。系统把它排到屏幕外时，空档里有同一个菜单的按钮。打开日志目录、打开热词文件、退出都还在。
 - [x] 2.9.6 收集目录不再有 `CapsWriter.app` 和 `CapsWriter Server.app`。客户端带起服务端时运行旁边的 `start_server`，不用 `open`。菜单栏仍由 `start_client` 提供。
 - [x] 2.10.0 `./build-macos.sh` 在 Apple Silicon 上打出 arm64 的 `start_server` 和 `start_client`，收集目录里没有 `CapsWriter.app`。`./clean-macos.sh` 只删除仓库里的 `build` 和 `dist`；这两个程序还在运行时不删除，`models` 还在。
+- [x] 2.10.1 `./build-macos.sh` 会跳过没有 PyInstaller 的系统 `python3`，改用实际能 `import PyInstaller` 的解释器。全部没有时，错误里列出试过的路径。
 - [x] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [x] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限、并且列不出任何输入设备时，提示去系统设置，进程不崩溃。默认输入编号是 -1、但还能列出输入设备时，日志写出这些编号，约 2 秒打不开就跳过，不把这件事说成没有麦克风权限。没有辅助功能权限时文字留在系统通知和终端里，不上屏。
 
