@@ -6,7 +6,7 @@
 
 识别、合并、热词 RAG、协议、批量脚本不动。要动的是依赖怎么按平台拆、引擎工厂在 Darwin 上创建哪一个类、Win32 输入和托盘怎么分支。
 
-待办就是 [prd.md](prd.md) 文首的验收清单，不另建任务表。下面各阶段只说明为了勾上哪一条。2.8.0 已勾上 A3 到 A9，以及不下载权重就能证明的 Windows 依赖和 readme。2.8.1 修的是会议录音字幕和口误数字，不是新阶段。A1、A2 要人在「文本编辑」和系统权限里看，没有勾，也不要当成已经听写成功。
+待办就是 [prd.md](prd.md) 文首的验收清单，不另建任务表。下面各阶段只说明为了勾上哪一条。2.8.0 已勾上 A3 到 A9，以及不下载权重就能证明的 Windows 依赖和 readme。2.8.1 修的是会议录音字幕和口误数字，不是新阶段。A1、A2 已在 2.9.5 勾上：14:24 文字进了「文本编辑」，菜单栏空档按钮能打开日志、热词和退出。
 
 ## 1. 加速分工
 
@@ -327,4 +327,4 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 
 `config_client.py` 的 `file_save_srt` 和 `file_save_txt` 保持 True。
 
-2026-10-27 版本 2.9.5。控制中心把名字为 CapsWriter 的状态项排在 x=-695。菜单栏空档里的按钮最后停在 x=1095、高 30，左边是空的，右边是麦克风图标，没有盖住。17:20 点这个按钮，菜单里有日志、热词、退出，按 Esc 关闭，没有点「全部退出」。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，81 项通过。A1 的证据仍是 14:24 的客户端日志：辅助功能已允许，前台是「文本编辑」，剪贴板长度 14，已粘贴；日记是「今天天气很好。今天天气很好。」A1、A2 勾上。
+2026-10-27 版本 2.9.5。控制中心把名字为 CapsWriter 的状态项排在 x=-695。菜单栏空档里的按钮最后停在 x=1095、高 30，左边是空的，右边是麦克风图标，没有盖住。17:20 点这个按钮，菜单里有日志、热词、退出，按 Esc 关闭，没有点「全部退出」。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，81 项通过。A1 的证据仍是 14:24 的客户端日志：辅助功能已允许，前台是「文本编辑」，剪贴板长度 14，已粘贴；日记是「今天天气很好。今天天气很好。」A1、A2 勾上。 同一天用 PyInstaller 6.22.3、Python 3.14.10 重新打出 `dist/CapsWriter-Offline` 的 arm64 `start_server` 和 `start_client`，两个 app 的短版本是 2.9.5。`codesign` 只有 adhoc，没有 TeamIdentifier，不是公证。短跑服务端日志是「模型文件检查通过 (qwen_asr, mlx)」和 `backend=mlx repo=mlx-community/Qwen3-ASR-1.7B-8bit device=Device(gpu, 0)`，6016 继续听着。

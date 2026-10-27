@@ -4,6 +4,7 @@
 
 - **菜单栏**：状态项仍使用固定名字 CapsWriter。控制中心把它排到屏幕外时，菜单栏空档里会出现同一个菜单的按钮。这次按钮在 x=1095，紧挨麦克风图标左边，没有盖住它。点开能看到日志、热词和退出，Esc 关掉。
 - 验证：`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，81 项通过。17:20 点开 x=1095 的按钮，菜单里有日志、热词、退出，随后按 Esc 关闭，没有点「全部退出」。14:24 的听写记录仍在：前台是「文本编辑」，日记是「今天天气很好。今天天气很好。」
+- **本地编译**：PyInstaller 6.22.3、Python 3.14.10 重新打出 arm64 Mach-O：`dist/CapsWriter-Offline/start_server`、`start_client`，以及未签名公证的 `CapsWriter.app`、`CapsWriter Server.app`，短版本 2.9.5。`codesign` 只有 adhoc，没有 TeamIdentifier。`core`、`models` 仍是指向仓库的绝对软链接。`internal/libjaccl.dylib` 和 `internal/mlx/lib/mlx.metallib` 都在。短跑打包后的服务端，日志是「模型文件检查通过 (qwen_asr, mlx)」和 `backend=mlx repo=mlx-community/Qwen3-ASR-1.7B-8bit device=Device(gpu, 0)`，随后继续听 6016。
 
 
 ## v2.9.4
