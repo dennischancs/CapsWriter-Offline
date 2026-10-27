@@ -59,7 +59,7 @@ class FileTranscriber:
     4. 调用 ResultHandler 处理结果
     """
     
-    def __init__(self, app: CapsWriterClient, file: Path):
+    def __init__(self, app: CapsWriterClient, file: Path, ws=None):
         """
         初始化文件转录器
         
@@ -72,6 +72,7 @@ class FileTranscriber:
         self.task_id: Optional[str] = None
         self._audio_duration: float = 0.0
         self.send_error: str = ''
+        self._ws_override = ws
 
     @property
     def state(self) -> ClientState:
@@ -80,8 +81,8 @@ class FileTranscriber:
 
     @property
     def _ws_manager(self) -> 'WebSocketManager':
-        """快捷访问桥接到 app.ws"""
-        return self.app.ws
+        """默认走客户端那条连接。移交文件时用单独的连接，避免抢走麦克风。"""
+        return self._ws_override or self.app.ws
     
     async def check(self) -> bool:
         """检查转录条件"""

@@ -43,15 +43,29 @@ class WebSocketManager:
         max_retries: 最大重试次数
     """
 
-    def __init__(self, app: CapsWriterClient):
+    def __init__(self, app: CapsWriterClient, isolated: bool = False):
         """
         初始化 WebSocket 管理器
 
         Args:
             app: 客户端 App 实例
+            isolated: 为真时不碰麦克风那条连接
         """
         self.app = app
+        self._isolated = isolated
+        self._socket = None
         self._connect_fail_logged = False  # 断联后只记一次失败日志
+
+    def _get_conn(self):
+        if self._isolated:
+            return self._socket
+        return self.state.websocket
+
+    def _set_conn(self, value):
+        if self._isolated:
+            self._socket = value
+            return
+        self.state.websocket = value
 
     @property
     def state(self) -> ClientState:
@@ -61,7 +75,13 @@ class WebSocketManager:
     @property
     def is_connected(self) -> bool:
         """检查是否已连接"""
-        return self.state.is_connected
+        sock = self._get_conn()
+        if sock is None:
+            return False
+        try:
+            return not sock.closed
+        except AttributeError:
+            return True
     
     async def connect(self) -> bool:
         """
@@ -77,8 +97,8 @@ class WebSocketManager:
             return True
 
         # 清理旧连接
-        if self.state.websocket is not None:
-            self.state.websocket = None
+        if self._get_conn() is not None:
+            self._set_conn(None)
 
         url = f"ws://{Config.addr}:{Config.port}"
 
@@ -97,7 +117,7 @@ class WebSocketManager:
             if tuple(int(v) for v in websockets.__version__.split(".")) >= (14,):
                 kwargs["proxy"] = None  
             
-            self.state.websocket = await websockets.connect(**kwargs)
+            self._set_conn(await websockets.connect(**kwargs))
 
             console.print(f'[bold green]已连接服务端: {url}[/bold green]\n')
             logger.info(f"WebSocket 建立成功: {url}")
@@ -130,11 +150,11 @@ class WebSocketManager:
             return False
         
         try:
-            await self.state.websocket.send(message.to_json())
+            await self._get_conn().send(message.to_json())
             return True
             
         except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
-            self.state.websocket = None
+            self._set_conn(None)
             raise CommunicationError("发送失败：连接已断开")
             
         except Exception as e:
@@ -152,12 +172,12 @@ class WebSocketManager:
             return None
         
         try:
-            raw_message = await self.state.websocket.recv()
+            raw_message = await self._get_conn().recv()
             data = json.loads(raw_message)
             return RecognitionMessage.from_dict(data)
             
         except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
-            self.state.websocket = None
+            self._set_conn(None)
             raise CommunicationError("接收失败：连接已断开")
             
         except json.JSONDecodeError as e:
@@ -168,9 +188,15 @@ class WebSocketManager:
     
     async def close(self) -> None:
         """关闭 WebSocket 连接"""
-        if self.state.websocket is not None:
-            await self.state.websocket.close()
-            self.state.websocket = None
+        sock = self._get_conn()
+        if sock is None:
+            return
+        self._set_conn(None)
+        try:
+            await sock.close()
+        except Exception:
+            pass
+        if not self._isolated:
             logger.info("WebSocket 连接已关闭")
 
     def close_sync(self) -> None:
@@ -180,7 +206,7 @@ class WebSocketManager:
         使用 run_coroutine_threadsafe 安全地将关闭操作调度到已有的事件循环。
         如果事件循环未运行，则直接置空连接引用。
         """
-        if self.state.websocket is None:
+        if self._get_conn() is None:
             return
 
         loop = self.app.loop
@@ -189,5 +215,5 @@ class WebSocketManager:
             logger.debug("已调度 WebSocket 关闭（threadsafe）")
         else:
             # 事件循环已停止，直接清空引用
-            self.state.websocket = None
+            self._set_conn(None)
             logger.debug("事件循环已停，直接置空 WebSocket 引用")

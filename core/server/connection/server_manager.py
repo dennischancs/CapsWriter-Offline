@@ -43,9 +43,10 @@ class SocketManager:
         """
         if self._is_running: return
         
-        # 0. 启动前自检环境
+        # 0. 启动前自检环境。Darwin 没有终端，不能再等回车。
         if not self._check_port():
-            input("\n按回车键退出...")
+            from core.tools.instance_guard import on_port_conflict
+            on_port_conflict(lambda: input("\n按回车键退出..."))
             return 
 
         self._is_running = True

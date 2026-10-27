@@ -48,8 +48,12 @@ class ProcessManager:
         state = self.app.state
         state.sockets_id = Manager().list()
         
-        # 获取标准输入文件描述符，用于 Windows 下的信号传递补丁
-        stdin_fn = sys.stdin.fileno()
+        # 获取标准输入文件描述符，用于 Windows 下的信号传递补丁。
+        # .app 里可能没有 stdin，不能因此让服务端起不来。
+        try:
+            stdin_fn = sys.stdin.fileno()
+        except (AttributeError, ValueError, OSError):
+            stdin_fn = None
         
         # 3. 创建并启动进程
         self._process = Process(
@@ -121,4 +125,4 @@ class ProcessManager:
             if self._process.is_alive():
                 logger.debug("子进程未响应优雅退出，执行强制终止")
                 self._process.terminate()
-            
+

@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.8.1`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.9.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -22,6 +22,7 @@
 - [x] A9. `model_backend=onnx` 时，SenseVoice 仍能出文本，并尝试 CoreML，失败再退 CPU。Fun-ASR 和 Qwen 不靠这条退路交差。
 - [x] 2.8.0 Darwin 上 `pyinstaller build.spec` 打出 arm64 Mach-O 的 `start_server` 和 `start_client`。运行目录是绝对路径软链接。服务端加载 MLX，日志是 `backend=mlx` 和 GPU。不是签名公证的 `.app`。
 - [x] 2.8.1 约 10 分钟的会议录音，txt 保留标点并分成多行。srt 多条，时间单调，最后结束时间不超出音长。口误「五五十套」不再变成 5510，「第三一个」不再变成第31个，「三百五百」不再变成 350100。ffmpeg 失败时日志带上 stderr 尾部。
+- [x] 2.9.0 打开客户端会带起没在跑的服务端，并等到它开始监听。再打开一次不会再加载一份模型，也不会再登记一套快捷键；带上文件则交给已经在菜单栏里的那一个。关掉客户端时服务端还在。菜单「全部退出」才结束锁里记下的那一个服务端。`build.spec` 在收集目录放未签名的 `CapsWriter.app` 和 `CapsWriter Server.app`。直接运行旁边的 Mach-O；用 `open` 打开未签名 app 会停在 dyld，不听端口。
 
 ### 不做
 

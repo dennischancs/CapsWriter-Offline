@@ -51,6 +51,10 @@ class MicRunner:
         logger.info("=" * 50)
         logger.info(f"CapsWriter Offline Client {__version__} (麦克风模式)")
         logger.info(f"日志级别: {Config.log_level}")
+
+        flush = getattr(self.app, 'flush_handed_files', None)
+        if flush:
+            flush()
         
         # 1. 资源启动
         self.start_resources()

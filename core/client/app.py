@@ -81,6 +81,9 @@ class CapsWriterClient:
 
         # 内存清理
         empty_current_working_set()
+        self._darwin_session = None
+        self._pending_files = []
+        self._pending_lock = threading.Lock()
 
     def stop(self):
         """
@@ -89,6 +92,7 @@ class CapsWriterClient:
         if self._stopped:
             return
         self._stopped = True
+        self._release_darwin_session()
         logger.info("正在执行 CapsWriterClient 资源释放...")
 
         # 1. 停止核心运行组件
@@ -130,6 +134,23 @@ class CapsWriterClient:
         register_signal(self.stop)
 
         files = [Path(f) for f in sys.argv[1:] if os.path.exists(f)]
+
+        if sys.platform == 'darwin':
+            from core.tools.instance_guard import collect_root, enter_client
+            gate = enter_client(
+                self.base_dir,
+                files,
+                collect_root(self.base_dir),
+                Config.port,
+                on_files=self._accept_handed_files,
+            )
+            if gate.action == 'exit':
+                raise SystemExit(gate.code)
+            self._darwin_session = gate.session
+            if gate.session is not None:
+                gate.session.serve(self._accept_handed_files)
+                from core.ui.tray import set_before_restart
+                set_before_restart(self._release_darwin_session)
 
         if files:
             # 文件转录模式
@@ -180,4 +201,38 @@ class CapsWriterClient:
                 self.stop()
             thread.join(timeout=3)
 
+    def _release_darwin_session(self):
+        session = getattr(self, '_darwin_session', None)
+        self._darwin_session = None
+        if session is not None:
+            session.release()
 
+    def _accept_handed_files(self, paths):
+        existing = [Path(path) for path in paths if os.path.exists(path)]
+        if not existing:
+            return
+        logger.info('收到待转录文件 %s 个' % len(existing))
+        with self._pending_lock:
+            self._pending_files.extend(existing)
+        if self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.flush_handed_files)
+
+    def flush_handed_files(self):
+        if not self.loop.is_running():
+            return
+        with self._pending_lock:
+            paths = list(self._pending_files)
+            self._pending_files.clear()
+        if not paths:
+            return
+        runner = FileRunner(self, paths, wait_for_enter=False, isolated=True)
+        task = self.loop.create_task(runner.run())
+        task.add_done_callback(self._log_handed_files)
+
+    def _log_handed_files(self, task):
+        try:
+            exc = task.exception()
+        except Exception:
+            return
+        if exc:
+            logger.error('移交的文件没有转录完: %s' % exc)

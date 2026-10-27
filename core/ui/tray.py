@@ -25,6 +25,7 @@ from . import logger, set_ui_logger
 
 # 退出回调函数（由主程序传入）
 _exit_callback = None
+_before_restart = None
 
 # 是否可用（在 enable_min_to_tray 时检测）
 _tray_available = None
@@ -36,6 +37,12 @@ def _set_exit_callback(callback):
 
 def _get_exit_callback():
     return _exit_callback
+
+
+def set_before_restart(callback):
+    """重启前先放开客户端锁，避免新进程误以为自己是第二个。"""
+    global _before_restart
+    _before_restart = callback
 
 
 def _check_tray_available() -> bool:
@@ -270,6 +277,11 @@ class _TraySystem:
     def on_restart(self, icon, item) -> None:
         """托盘重启处理：启动新进程后退出当前进程"""
         logger.info("托盘重启: 用户点击重启菜单，准备重启程序")
+        if _before_restart is not None:
+            try:
+                _before_restart()
+            except Exception as exc:
+                logger.error(f"重启前释放实例失败: {exc}")
         try:
             if getattr(sys, 'frozen', False):
                 cmd = sys.argv

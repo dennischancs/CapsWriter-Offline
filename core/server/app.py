@@ -8,6 +8,7 @@ CapsWriter Offline 服务端主程序门面类 (Facade)
 """
 
 import os
+import sys
 import asyncio
 from pathlib import Path
 from config_server import ServerConfig as Config, __version__
@@ -43,6 +44,7 @@ class CapsWriterServer:
 
         self.version = __version__
         self.is_alive = False
+        self._server_hold = None
 
 
     def _print_banner(self):
@@ -76,6 +78,11 @@ class CapsWriterServer:
         # 3. 停止托盘图标
         self.tray_manager.stop()
 
+        hold = getattr(self, '_server_hold', None)
+        self._server_hold = None
+        if hold is not None:
+            hold.release()
+
         # 4. 最后停止协程（需在其他资源释放之后）
         self.loop.stop()
 
@@ -91,6 +98,15 @@ class CapsWriterServer:
         """
         # 防连续触发
         if self.is_alive: return
+
+        # 加载模型之前先占锁。第二份直接退出，不再把模型读进内存。
+        if sys.platform == 'darwin':
+            from core.tools.instance_guard import admit_server
+            decision = admit_server(self.base_dir, Config.port)
+            if decision.action == 'exit':
+                raise SystemExit(decision.code)
+            self._server_hold = decision.hold
+
         self.is_alive = True
 
         # 注册退出信号处理

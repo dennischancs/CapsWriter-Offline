@@ -21,3 +21,6 @@ class SignalHandler:
             
 def register_signal(callback):
     signal.signal(signal.SIGINT, SignalHandler(callback))
+    if sys.platform == 'darwin':
+        # 菜单里的「全部退出」发的是 SIGTERM，要走和退出一样的清理。
+        signal.signal(signal.SIGTERM, lambda signum, frame: callback())

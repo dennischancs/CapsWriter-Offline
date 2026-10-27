@@ -35,6 +35,16 @@ class TrayManager:
         icon_path = os.path.join(self.app.base_dir, 'assets', 'icon.ico')
         
         # 启用托盘
+        menu = self.menu_items()
+        enable_min_to_tray(
+            'CapsWriter Client',
+            icon_path,
+            exit_callback=self.app.stop,
+            more_options=menu
+        )
+        logger.info("托盘图标已启用")
+
+    def menu_items(self):
         menu = [
             ('📋 复制结果', self._copy_last_result),
             ('📁 日记', self._open_diary),
@@ -45,13 +55,17 @@ class TrayManager:
         ]
         if sys.platform == 'darwin':
             menu.insert(0, ('📂 日志', self._open_logs))
-        enable_min_to_tray(
-            'CapsWriter Client',
-            icon_path,
-            exit_callback=self.app.stop,
-            more_options=menu
-        )
-        logger.info("托盘图标已启用")
+            menu.append(('全部退出', self._quit_all))
+        return menu
+
+    def _quit_all(self, icon=None, item=None):
+        """关掉客户端，并只结束锁里记下的那一个服务端。"""
+        try:
+            from core.tools.instance_guard import stop_recorded_server
+            stop_recorded_server(self.app.base_dir)
+        except Exception as exc:
+            logger.warning('结束服务端失败: %s' % exc)
+        self.app.stop()
 
     def run_blocking(self) -> None:
         """Darwin 上由主线程阻塞在菜单循环里。没有图标时立刻返回。"""

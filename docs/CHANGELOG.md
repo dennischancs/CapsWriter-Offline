@@ -1,5 +1,12 @@
 # 更新日志
 
+## v2.9.0
+
+- **单实例**：Darwin 上打开客户端会带起没在跑的服务端，并等到它开始监听。再运行一次 `start_server` 退出码 0，提示「服务端已在运行」，不会再加载一份模型。再运行一次客户端会停在「已在菜单栏」，不再登记一套快捷键；带上文件则交给已经在菜单栏里的那一个。关掉客户端时服务端还在。菜单「全部退出」只向锁里记下、且命令行含 `start_server` 或 `CapsWriter Server` 的进程发 SIGTERM。
+- **本地编译**：PyInstaller 6.22.3、Python 3.14.10 打出 arm64 Mach-O：`dist/CapsWriter-Offline/start_server`、`start_client`，以及未签名的 `CapsWriter.app`、`CapsWriter Server.app`，版本 2.9.0。两者都是 `LSUIElement`，`LSMultipleInstancesProhibited` 为 false。只有客户端写了麦克风用途。启动器是 `exec` 旁边的二进制，没有 `open -n`。`models`、`core`、`logs` 仍是指向仓库的绝对软链接。`internal/libjaccl.dylib` 和 `internal/mlx/lib/mlx.metallib` 都在。`codesign` 显示 completely unsigned。
+- **怎么启动**：请直接运行收集目录里的 `start_server` 和 `start_client`。用 `open` 打开未签名 app 时，进程停在 dyld 的 `__open`，内存只有一百多 KB，不听 6016。这不是签名公证的 app。
+- 验证：`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，69 项通过。打包后的 `./dist/CapsWriter-Offline/start_server` 日志是 `backend=mlx repo=mlx-community/Qwen3-ASR-1.7B-8bit device=Device(gpu, 0)`，并监听 `0.0.0.0:6016`。第二次启动退出码 0，父进程不变。客户端版本 2.9.0，连上 `ws://127.0.0.1:6016`，没有再拉起服务端。客户端结束后 6016 仍由原服务端占用。`stop_recorded_server` 发出 SIGTERM 后，服务端日志写「再见！」，退出码 0，6016 释放，子进程也没了。菜单栏客户端收不到 SIGTERM。没有输入监控和辅助功能权限，文字没有上屏。A1、A2 仍然没有勾。
+
 ## v2.8.1
 
 - **会议录音**：约 10 分钟的中文会议，txt 保留标点并分行，不再收成没有标点的一行。srt 有多条，时间单调，最后一条的结束时间不超出音长。

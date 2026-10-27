@@ -270,6 +270,8 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 - ffmpeg 失败时，日志带上 stderr 尾部，不再只有退出码。
 - 同一天用 `python -m PyInstaller build.spec` 和 `build-client.spec` 重新打出 arm64 Mach-O 的 `start_server`、`start_client` 和客户端包里的 `start_client`。短跑打包后的服务端，模型检查通过，日志是 `backend=mlx` 和 `Device(gpu, 0)`，然后关掉。6016 没有继续占用。
 
+2026-10-27 版本 2.9.0。Darwin 上打开客户端会带起没在跑的服务端，并等到端口开始监听。第二份服务端在加载模型之前退出。第二份客户端不再登记快捷键；带了文件就交给已经在菜单栏里的那一个。关掉客户端不会关掉服务端。菜单「全部退出」只向锁里记下、且命令行对得上的服务端发 SIGTERM。`build.spec` 在收集目录放未签名的 `CapsWriter.app` 和 `CapsWriter Server.app`，拉起时不用 `open -n`。直接运行 Mach-O 正常。用 `open` 打开未签名 app 会停在 dyld 的 `__open`，不听端口。不做签名公证。A1、A2 仍然没有勾。
+
 
 
 ## 9. llama.cpp Metal 只是应急，不排期
