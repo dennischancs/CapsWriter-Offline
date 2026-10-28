@@ -1,5 +1,55 @@
 # 更新日志
 
+## v2.19.0
+
+- **转录结束后不再卡在「转录中」**：srt、txt 和 json 写好后，窗口状态会变成「完成」。有失败是「完成，有失败」，中途停止是「已停止」。开始按钮和模型选择也会重新可用。
+- **日志等级**：窗口可以选 DEBUG、INFO、WARNING、ERROR。低于所选等级的服务端日志不显示，文件进度始终显示。服务端日志会跟着出现在窗口里。每一行前面是 `[年-月-日 时:分:秒.毫秒]`。
+- **手动换模型**：SenseVoice Small、Fun-ASR Nano、Qwen3-ASR、Paraformer。和当前不一样时，下次开始前写入 `config_server.py` 并重启服务端。正在转录时不能换。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe`，26 项通过。这次没有重跑 PyInstaller。
+
+## v2.18.0
+
+- **地址栏可以拖入文件或文件夹**：从 Finder 拖一个音视频或文件夹到批量转录的地址栏，路径会填进去。一次拖入多个时只用第一个。带空格的路径不会被拆开。粘贴和打开按钮还在。
+- **编译改用本机 capswriter**：`./build-macos.sh` 和 `./clean-macos.sh` 用 miniforge 里的 `capswriter`（Python 3.13.18）。这个环境里已经有 PyInstaller。没设 `CAPSWRITER_PYTHON`、这个环境也不在时，才退回系统的 `python3`。仓库的 Python 下限仍是 3.14，没有为 Mac 降下去。
+- 验证：`/opt/homebrew/Caskroom/miniforge/base/envs/capswriter/bin/python3 -m unittest tests.test_batch_transcribe tests.test_macos_build tests.test_build_support`，45 项通过。这次没有重跑 PyInstaller。
+
+## v2.17.0
+
+- **悬停说明跟着系统外观**：批量转录窗口里，鼠标停在地址、勾选、开始、停止和状态灯上时，暗色主题用浅色字、深色底，浅色主题用深色字、浅色底。每次悬停重新读系统外观，切主题后不用重启窗口。
+- 验证：`/usr/bin/python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，批量转录 20 项通过。版本检查用 conda 的 Python 3.14，1 项通过。这次没有重跑 PyInstaller：原来那个带 PyInstaller 的 Python 3.14 已经不在，`dist` 也已经清掉。
+
+## v2.16.0
+
+- **批量转录不再让人改等待时间**：窗口拿掉「等待服务端」「超时系数」「单文件最少等待」和「超过几时切开」。这几项固定为 180 秒、时长的 4 倍再加 60 秒、最少 180 秒、超过 2 小时切开。它们是放弃线，识别完成会立刻返回，调小会把还在算的文件判失败。鼠标停在地址、勾选、开始、停止和状态灯上会看到说明。
+- 验证：`/usr/bin/python3 -m unittest tests.test_batch_transcribe`，19 项通过。窗口传入更短的等待秒数仍是 180。版本检查用 conda 的 Python 3.14，1 项通过。这次没有重跑 PyInstaller：原来那个带 PyInstaller 的 Python 3.14 已经不在。
+
+## v2.15.0
+
+- **批量转录窗口先出现**：双击或不带参数运行 `batch_transcribe` 时，窗口马上显示。服务端还在加载时不再挡住界面。左下角红灯是还没准备好，黄灯是正在准备，绿灯旁边写 Ready。没到绿灯时，开始转录不会跑。地址栏和打开在准备期间仍可使用。
+- 验证：`/private/tmp/capswriter-macos-test/bin/python -m unittest tests.test_batch_transcribe tests.test_build_support`，27 项通过。窗口先显示黄灯，准备完成后变绿灯；失败保持红灯，开始转录不启动。`./build-macos.sh` 重新打出 arm64 的 `batch_transcribe`。
+
+## v2.14.0
+
+- **批量转录窗口**：不带参数运行 `batch_transcribe` 会打开自己的窗口。一行地址可以粘贴文件或文件夹，打开按钮用来选择。是否进子文件夹、长文件切开、已有字幕重做、等待时间这些都有默认值，也可以改。开始和停止只作用于这一轮批量转录。超过几小时切开仍只写在这个脚本里，`start_client` 和 `start_server` 没有这条界面。
+- 验证：`python3 -m unittest tests.test_batch_transcribe`，16 项通过。本机创建窗口后能看到地址、打开、参数、开始转录和停止转录。这次没有重跑 PyInstaller。
+
+## v2.13.0
+
+- **默认模型**：`config_server.py` 的 `model_type` 改为 `sensevoice`。Apple Silicon 上仍走 MLX，算在 GPU 上。神经引擎不再作为加速路线。Qwen、Fun-ASR、Paraformer 还在，改配置就能换。
+- **批量转录**：先探测时长。超过 2 小时就按 2 小时切开，临时片段识别后再合并成一个 `.srt`、`.txt` 和 `.json`。不再整段试跑失败后才切。两小时及以内仍整文件送。`--no-long-fallback` 可以关掉这次预切。
+- 验证：`python3 -m unittest tests.test_batch_transcribe`，13 项通过。`./build-macos.sh` 打出 arm64 的 `batch_transcribe`，`--help` 写明超过 2 小时才按 2 小时先切开。重新打开的服务端日志是 `sensevoice`、`mlx-community/SenseVoiceSmall`、`Device(gpu, 0)`。
+
+## v2.12.0
+
+- **批量转录**：只看同名 `.srt`。这个文件已经在就跳过，不管旁边有没有 `.txt` 或 `.json`。没有 `.srt` 就再转录一次，并留下非空的 `.srt`、`.txt` 和 `.json`。`--force` 仍会重做已有字幕的文件。
+- 验证：`python3 -m unittest tests.test_batch_transcribe`，12 项通过。
+
+## v2.11.0
+
+- **批量转录**：`./build-macos.sh` 的完整收集目录里多一个可执行文件 `batch_transcribe`，和 `start_server`、`start_client` 放在一起。在该目录运行 `./batch_transcribe 文件夹`，服务端没开时拉起旁边的 `start_server`，每个音视频旁边留下同名 `.srt` 和 `.txt`。源码用法仍是 `python batch_transcribe.py 文件夹`。只打客户端时没有这个文件。
+- 验证：`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，103 项通过。PyInstaller 6.22.3 把完整目录打到临时目录，`batch_transcribe` 是 arm64 Mach-O。`--help` 和空目录 `--dry-run` 退出码都是 0。正在听 6016 的 `start_server` 没有重写，只把新的 `batch_transcribe` 放进 `dist/CapsWriter-Offline`。
+
+
 ## v2.10.1
 
 - **本地编译**：`./build-macos.sh` 不再停在没有 PyInstaller 的系统 `python3` 上。它会继续找仓库 `.venv`、`pyinstaller` 旁边的 Python，以及 `python3.14`。找到能 `import PyInstaller` 的才拿来编译。一个都没有时，错误里列出试过的解释器和原因。系统自带的 `python3` 不够，需要带 PyInstaller 的 Python 3.14。

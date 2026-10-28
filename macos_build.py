@@ -3,7 +3,7 @@
 
 build 只调用 build.spec 或 build-client.spec。
 clean 只删除仓库里的 build 和 dist。models、日志和仓库外的路径不动。
-dist 里的 start_server / start_client 还被进程占用时，两件事都不做。
+dist 里的 start_server / start_client / batch_transcribe 还被进程占用时，两件事都不做。
 解释器会跳过没有 PyInstaller 的 python3。
 """
 from __future__ import annotations
@@ -20,9 +20,8 @@ CLIENT_SPEC = 'build-client.spec'
 FULL_DIR = 'CapsWriter-Offline'
 CLIENT_DIR = 'CapsWriter-Offline-Client'
 APP_NAMES = ('CapsWriter.app', 'CapsWriter Server.app')
-WATCHED = (
-    (FULL_DIR, 'start_server'),
-    (FULL_DIR, 'start_client'),
+FULL_BINARIES = ('start_server', 'start_client', 'batch_transcribe')
+WATCHED = tuple((FULL_DIR, name) for name in FULL_BINARIES) + (
     (CLIENT_DIR, 'start_client'),
 )
 
@@ -46,6 +45,9 @@ FALLBACK_TOOL_DIRS = (
 )
 VERSIONED_PYTHONS = ('python3.14', 'python3.13', 'python3.12', 'python3')
 HOMEBREW_PYTHON314 = '/opt/homebrew/bin/python3.14'
+MINIFORGE_CAPSWRITER_PYTHON = (
+    '/opt/homebrew/Caskroom/miniforge/base/envs/capswriter/bin/python3'
+)
 
 
 def resolve_python(candidate, which=None):
@@ -101,6 +103,7 @@ def python_candidates(root, env_python=None, which=None, tool_dirs=None):
         tool_dirs = FALLBACK_TOOL_DIRS
     found = []
     _add_python(found, env_python, locate)
+    _add_python(found, MINIFORGE_CAPSWRITER_PYTHON, locate)
     root = Path(root)
     _add_python(found, str(root / '.venv' / 'bin' / 'python'), locate)
     _add_python(found, str(root / '.venv' / 'bin' / 'python3'), locate)
@@ -132,7 +135,8 @@ def probe_pyinstaller(python):
 def format_missing_python(tried):
     lines = [
         '没有找到带 PyInstaller 的 Python。',
-        '系统自带的 python3 不够，需要带 PyInstaller 的 Python 3.14。',
+        '系统自带的 python3 不够。本机用 miniforge 的 capswriter 环境，'
+        '需要这个环境里能 import PyInstaller。',
     ]
     if tried:
         lines.extend('%s: %s' % (path, detail) for path, detail in tried)
@@ -321,7 +325,7 @@ def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, 
     if code != 0:
         raise BuildError('PyInstaller 失败，退出码 %s' % code, code if code else 1)
     dest_name = CLIENT_DIR if client_only else FULL_DIR
-    names = ('start_client',) if client_only else ('start_server', 'start_client')
+    names = ('start_client',) if client_only else FULL_BINARIES
     kind_of = file_kind if kind_of is None else kind_of
     errors = check_collect(root / 'dist' / dest_name, names, kind_of, require_mlx=not client_only)
     if errors:

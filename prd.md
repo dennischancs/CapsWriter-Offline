@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.10.1`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.19.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -31,6 +31,15 @@
 - [x] 2.9.6 收集目录不再有 `CapsWriter.app` 和 `CapsWriter Server.app`。客户端带起服务端时运行旁边的 `start_server`，不用 `open`。菜单栏仍由 `start_client` 提供。
 - [x] 2.10.0 `./build-macos.sh` 在 Apple Silicon 上打出 arm64 的 `start_server` 和 `start_client`，收集目录里没有 `CapsWriter.app`。`./clean-macos.sh` 只删除仓库里的 `build` 和 `dist`；这两个程序还在运行时不删除，`models` 还在。
 - [x] 2.10.1 `./build-macos.sh` 会跳过没有 PyInstaller 的系统 `python3`，改用实际能 `import PyInstaller` 的解释器。全部没有时，错误里列出试过的路径。
+- [x] 2.11.0 完整收集目录里有可执行文件 `batch_transcribe`。它和 `start_server` 放在一起。只打客户端的包没有这个文件。
+- [x] 2.12.0 批量转录只看同名 `.srt`。这个文件已在就跳过。没有 `.srt` 就再转录一次，并留下非空的 `.srt`、`.txt` 和 `.json`。
+- [x] 2.13.0 默认模型是 SenseVoice Small，MLX 走 GPU。批量转录先探测时长，超过 2 小时按 2 小时切开再合并。
+- [x] 2.14.0 不带参数运行 `batch_transcribe` 打开批量转录窗口。地址栏可粘贴文件或文件夹。开始和停止只停这一轮。
+- [x] 2.15.0 双击批量转录先看到窗口。红灯是没准备好，黄灯是正在准备，绿灯和 Ready 才是可以开始。
+- [x] 2.16.0 窗口不再提供等待秒数、超时系数、最少等待和切开小时数。这四项固定。鼠标停在控件上能看到说明。
+- [x] 2.17.0 悬停说明跟着系统外观。暗色是浅字深底，浅色是深字浅底。
+- [x] 2.18.0 地址栏可以拖入一个文件或文件夹。一次拖入多个时只用第一个。本地编译优先用 miniforge 的 capswriter 环境。
+- [x] 2.19.0 文件写好后窗口状态离开「转录中」。日志可选 DEBUG、INFO、WARNING、ERROR。模型可在 SenseVoice Small、Fun-ASR Nano、Qwen3-ASR、Paraformer 之间选，下次开始前写入配置并重启服务端。
 - [x] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [x] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限、并且列不出任何输入设备时，提示去系统设置，进程不崩溃。默认输入编号是 -1、但还能列出输入设备时，日志写出这些编号，约 2 秒打不开就跳过，不把这件事说成没有麦克风权限。没有辅助功能权限时文字留在系统通知和终端里，不上屏。
 

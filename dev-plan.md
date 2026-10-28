@@ -321,11 +321,13 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 
 ## 12. 批量脚本
 
-[batch_transcribe.py](batch_transcribe.py) 已经按「一条 WebSocket、不预导出整段 WAV、两个成品都有效才跳过」实现。本计划不改它的流程。
+[batch_transcribe.py](batch_transcribe.py) 按「一条 WebSocket、不预导出整段 WAV」转录。跳过只看同名 `.srt`。超过 2 小时先按 2 小时切开再合并，不再整段失败后才切。默认识别模型是 SenseVoice Small，走 GPU。
+
+完整收集目录另外带可执行文件 `batch_transcribe`。打包后它从自己旁边找 `start_server`，不再用本程序去执行 `start_server.py`。源码运行仍用当前 Python。
 
 它和移植的接口只有一个：服务端要能在 Mac 上被 `start_server.py` 拉起，并且文件任务会因为 MLX 引擎没有 `TIMESTAMPS` 而走到阶段 4 的对齐器。阶段 4 之前，批量可以出文本，字幕时间可能是均分的，不算完成。
 
-`config_client.py` 的 `file_save_srt` 和 `file_save_txt` 保持 True。
+`config_client.py` 的 `file_save_srt`、`file_save_txt` 和 `file_save_json` 保持 True。
 
 2026-10-27 版本 2.9.5。控制中心把名字为 CapsWriter 的状态项排在 x=-695。菜单栏空档里的按钮最后停在 x=1095、高 30，左边是空的，右边是麦克风图标，没有盖住。17:20 点这个按钮，菜单里有日志、热词、退出，按 Esc 关闭，没有点「全部退出」。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，81 项通过。A1 的证据仍是 14:24 的客户端日志：辅助功能已允许，前台是「文本编辑」，剪贴板长度 14，已粘贴；日记是「今天天气很好。今天天气很好。」A1、A2 勾上。 同一天用 PyInstaller 6.22.3、Python 3.14.10 重新打出 `dist/CapsWriter-Offline` 的 arm64 `start_server` 和 `start_client`，两个 app 的短版本是 2.9.5。`codesign` 只有 adhoc，没有 TeamIdentifier，不是公证。短跑服务端日志是「模型文件检查通过 (qwen_asr, mlx)」和 `backend=mlx repo=mlx-community/Qwen3-ASR-1.7B-8bit device=Device(gpu, 0)`，6016 继续听着。
 
@@ -333,4 +335,24 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 
 2026-10-27 版本 2.10.0。新增 `build-macos.sh` 和 `clean-macos.sh`。编译走 `macos_build.py`，默认 `build.spec`，参数 `client` 才走 `build-client.spec`。清理只删 `build` 和 `dist`；`dist` 若是指向仓库外的符号链接，只解开链接。`start_server` 或 `start_client` 还被占用时，清理和编译都直接退出。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，93 项通过。这次没有重跑 PyInstaller。
 
+2026-10-28 版本 2.15.0。双击批量转录先显示窗口，再在后台准备服务端。左下角红灯还没好，黄灯正在准备，绿灯写 Ready。没绿灯时开始转录不会跑。地址栏和打开在准备期间仍可用。`/private/tmp/capswriter-macos-test/bin/python -m unittest tests.test_batch_transcribe tests.test_build_support`，27 项通过。`./build-macos.sh` 重新打出 08:03 的 arm64 `batch_transcribe`。
+
+2026-10-28 版本 2.16.0。窗口隐藏等待服务端、超时系数、单文件最少等待和切开小时数。固定 180 秒、4 倍加 60 秒、最少 180 秒、超过 2 小时切开。鼠标停在控件上才看到说明。`/usr/bin/python3 -m unittest tests.test_batch_transcribe`，19 项通过。conda Python 3.14 的版本检查 1 项通过。带 PyInstaller 的解释器已经不在，这次没有重编译。
+
+2026-10-28 版本 2.17.0。悬停说明不再写死浅黄底。每次显示时读 `AppleInterfaceStyle`。暗色用浅字深底，浅色用深字浅底。读不到就按浅色，避免白字浅底。`/usr/bin/python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，20 项批量转录通过；版本检查在系统 Python 3.9 上因没有 tomllib 报错，conda Python 3.14 重跑这 1 项通过。这次没有重编译。
+
+2026-10-28 版本 2.18.0。地址栏注册 `tkinterdnd2` 的文件拖放。一次拖入多个只留第一个，花括号里的空格属于同一个路径。`build-macos.sh` 和 `clean-macos.sh` 改用 `/opt/homebrew/Caskroom/miniforge/base/envs/capswriter/bin/python3`，这个环境是 Python 3.13.18，并且能 import PyInstaller。`requires-python` 仍是 `>=3.14`。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_macos_build tests.test_build_support`，45 项通过。这次没有重编译。
+
+2026-10-28 版本 2.19.0。转录线程结束时把退出码放进队列，不再只靠主线程的 `after` 改状态。文件写好后状态离开「转录中」。窗口增加日志等级和模型下拉。换模型才写 `config_server.py` 并重启 6016。服务端 `logs/server_latest.log` 追加进窗口，再按等级过滤。capswriter 的 Python 跑 `tests.test_batch_transcribe`，26 项通过。这次没有重编译。
+
 2026-10-27 版本 2.10.1。`./build-macos.sh` 会跳过没有 PyInstaller 的系统 `python3`，依次看 `CAPSWRITER_PYTHON`、仓库 `.venv`、`pyinstaller` 旁边的 Python、`python3.14` / `3.13` / `3.12`，以及 `/opt/homebrew/bin/python3.14`。失败时列出试过的路径。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，97 项通过。选中 `/tmp/capswriter-macos-test/bin/python`。这次没有重跑 PyInstaller。
+
+2026-10-27 版本 2.11.0。`build.spec` 增加 `batch_transcribe`，完整收集目录和 `start_server` 放在一起。只打客户端的 spec 不含它。打包后的程序从所在目录找 `start_server`，源码仍走 `python start_server.py`。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，103 项通过。PyInstaller 6.22.3 打出 arm64 的 `batch_transcribe`，`--help` 和空目录 `--dry-run` 退出码 0。当时 `start_server` 还在听 6016，没有重写它，只把这个新文件放进 `dist/CapsWriter-Offline`。
+
+2026-10-27 版本 2.12.0。批量转录改为只看同名 `.srt`。文件已在就跳过，缺 `.txt` 或 `.json` 也不补。没有 `.srt` 才再转录，并留下这三个非空文件。切段合并时字级时间按片段起点平移，`.srt` 最后写入。`python3 -m unittest tests.test_batch_transcribe`，12 项通过。
+
+2026-10-27 版本 2.13.0。默认 `model_type` 改为 `sensevoice`，MLX 仍在 GPU 上，神经引擎不再作为加速路线。批量脚本先探测时长，超过 2 小时按 2 小时切开，临时片段合并成一个 srt、txt 和 json。`python3 -m unittest tests.test_batch_transcribe` 通过后再编译收集目录。
+
+2026-10-28 版本 2.14.0。批量转录不带参数时打开自己的窗口。地址、打开、默认参数、开始和停止都在 `batch_transcribe.py`。长文件切开不进 `start_client` 或 `start_server`。`python3 -m unittest tests.test_batch_transcribe`，16 项通过。这次没有重跑 PyInstaller。
+
+2026-10-28 版本 2.15.0。双击批量转录先显示窗口，再在后台准备服务端。左下角红灯还没好，黄灯正在准备，绿灯写 Ready。没绿灯时开始转录不会跑。地址栏和打开在准备期间仍可用。`/private/tmp/capswriter-macos-test/bin/python -m unittest tests.test_batch_transcribe tests.test_build_support`，27 项通过。`./build-macos.sh` 重新打出 08:03 的 arm64 `batch_transcribe`。

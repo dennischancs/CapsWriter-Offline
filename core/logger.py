@@ -91,8 +91,8 @@ class Logger:
         file_name_prefix = log_filename or name or 'root'
         log_file = os.path.join(log_dir, f'{file_name_prefix}_latest.log')
         formatter = logging.Formatter(
-            fmt='%(asctime)s.%(msecs)03d %(levelname)-5s [%(filename)20s:%(lineno)-3d] %(message)s',
-            datefmt='%H:%M:%S'
+            fmt='[%(asctime)s.%(msecs)03d] %(levelname)-5s [%(filename)20s:%(lineno)-3d] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
         )
         file_handler = TruncatingFileHandler(
             log_file,
