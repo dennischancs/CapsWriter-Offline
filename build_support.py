@@ -1,20 +1,23 @@
 # coding: utf-8
 """PyInstaller spec 的平台分支。Windows 的图标、UPX 和目录联接保持原样。"""
-from os import makedirs, remove, symlink, walk
-from os.path import abspath, basename, dirname, exists, islink, join, relpath
+from os import makedirs, remove, walk
+from os.path import abspath, basename, dirname, exists, isdir, islink, join, relpath
 from platform import system
-from shutil import copyfile, rmtree
+from shutil import copyfile, copytree, ignore_patterns, rmtree
 
 
-DARWIN_RUNTIME_FOLDERS = (
+DARWIN_COPY_FOLDERS = (
     'models',
     'assets',
     'core',
     'LLM',
     'docs',
+)
+DARWIN_EMPTY_FOLDERS = (
     'logs',
     'log',
 )
+DARWIN_RUNTIME_FOLDERS = DARWIN_COPY_FOLDERS + DARWIN_EMPTY_FOLDERS
 
 
 def is_darwin(platform_name=None):
@@ -62,22 +65,59 @@ def skip_collected_data(src, platform_name=None):
     return False
 
 
-def link_runtime_folders(dest_root, folders=None, platform_name=None):
-    """Darwin 上把已有运行目录链到绝对路径。缺的跳过，不改 Windows 的 mklink。"""
+def _discard(path):
+    """先解开符号链接。不能对链接用 rmtree，否则会删掉仓库里的模型。"""
+    if islink(path):
+        remove(path)
+        return
+    if not exists(path):
+        return
+    if isdir(path):
+        rmtree(path)
+        return
+    remove(path)
+
+
+def copy_runtime_folders(dest_root, folders=None, platform_name=None, empty_folders=None):
+    """Darwin 上复制真实目录。缺的跳过。logs 只建空目录，不把开发机日志打进去。"""
     if not is_darwin(platform_name):
         return []
-    linked = []
-    for folder in folders or DARWIN_RUNTIME_FOLDERS:
+    copied = []
+    names = DARWIN_COPY_FOLDERS if folders is None else folders
+    for folder in names:
         if not exists(folder):
             continue
         dest_folder = join(dest_root, folder)
-        if islink(dest_folder):
-            remove(dest_folder)
-        elif exists(dest_folder):
-            rmtree(dest_folder)
-        symlink(abspath(folder), dest_folder)
-        linked.append(dest_folder)
-    return linked
+        _discard(dest_folder)
+        copytree(
+            folder,
+            dest_folder,
+            symlinks=False,
+            ignore=ignore_patterns('__pycache__', '*.pyc', '.DS_Store'),
+        )
+        copied.append(dest_folder)
+    blanks = DARWIN_EMPTY_FOLDERS if empty_folders is None else empty_folders
+    for folder in blanks:
+        dest_folder = join(dest_root, folder)
+        _discard(dest_folder)
+        makedirs(dest_folder, exist_ok=True)
+        copied.append(dest_folder)
+    return copied
+
+
+def link_runtime_folders(dest_root, folders=None, platform_name=None):
+    """旧名字。Darwin 上改为复制，不再链回仓库的绝对路径。"""
+    return copy_runtime_folders(dest_root, folders=folders, platform_name=platform_name)
+
+
+def linked_runtime_errors(dest_root):
+    """包里的运行目录必须是真实文件。符号链接拿到别的机器上会断。"""
+    errors = []
+    for folder in DARWIN_RUNTIME_FOLDERS:
+        path = join(dest_root, folder)
+        if islink(path):
+            errors.append('%s 是符号链接，包里要放真实文件' % path)
+    return errors
 
 
 def _package_root(name):

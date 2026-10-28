@@ -23,6 +23,7 @@ from .media_tool import MediaTool
 from .result_handler import ResultHandler
 from . import logger
 from core.tools.token_sync import sync_tokens_from_text
+from core.tools.progress_log import ProgressGate, show_progress
 
 if TYPE_CHECKING:
     from core.client.state import ClientState
@@ -73,6 +74,7 @@ class FileTranscriber:
         self._audio_duration: float = 0.0
         self.send_error: str = ''
         self._ws_override = ws
+        self._progress = ProgressGate()
 
     @property
     def state(self) -> ClientState:
@@ -147,7 +149,7 @@ class FileTranscriber:
                     prog_str = f'    发送进度：{progress:.2f}s / {self._audio_duration:.2f}s'
                 else:
                     prog_str = f'    发送进度：{progress:.2f}s'
-                console.print(prog_str, end='\r')
+                show_progress(console, self._progress, prog_str)
 
                 message = AudioMessage(
                     task_id=self.task_id,
@@ -221,7 +223,7 @@ class FileTranscriber:
                 if not msg:
                     break
                 
-                console.print(f'    转录进度: {msg.duration:.2f}s', end='\r')
+                show_progress(console, self._progress, f'    转录进度: {msg.duration:.2f}s')
                 if msg.is_final:
                     message = msg # 保持变量名兼容后续调用
                     break

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Apple Silicon 本地编译。产物在 dist/CapsWriter-Offline。
+# Apple Silicon 本地编译。产物是 dist/CapsWriter.app。
+# 里面有 Swift 界面、服务端和复制进来的模型。
 # 入口用本机 miniforge 的 capswriter。没有时再退回 python3。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"

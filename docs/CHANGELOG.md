@@ -1,5 +1,30 @@
 # 更新日志
 
+## v2.24.0
+
+- **进度日志**：界面里的「发送进度」和「转录进度」至少隔 30 秒一行。同一种进度的第一行马上出现。完成、失败、文件名，以及「未找到 ffmpeg」这类说明仍立刻出现。
+- **一个 app**：`./build-macos.sh` 打出未签名的 `dist/CapsWriter.app`。Swift 界面在 `Contents/MacOS`，服务端、批量转录和模型在 `Contents/Resources/runtime`。模型是复制进去的真实文件，不是指回仓库的符号链接。`./build-macos.sh client` 仍只打客户端，不带模型，也不组装这个 app。
+- **清理**：`./clean-macos.sh` 仍只删除仓库里的 `build` 和 `dist`。包里的模型副本跟着 `dist` 一起删。仓库里的 `models` 不动。这些程序还在跑就不删。
+- 验证：`swift test --package-path macos/CapsWriterShell`，17 项通过。capswriter 环境的 `python3 -m unittest tests.test_progress_log tests.test_batch_transcribe tests.test_build_support tests.test_macos_build`，66 项通过。这次没有重跑 PyInstaller，也没有复制整套模型。
+
+## v2.23.0
+
+- **图标和关于**：`dist/CapsWriter.app` 使用 Cw 图标。菜单栏是同一个标记。应用菜单和右键菜单里有「关于 CapsWriter」。
+- **关闭时可以选择并勾选记住**：点关闭会问缩小到菜单栏，还是退出。勾选「记住我的选择」后，下次关闭按这次的来。不勾选就下次再问。取消则窗口还在。已经记住时，菜单里的「下次关闭再询问」可以清掉。
+- **缩到菜单栏之后**：左键打开批量转录窗口。右键（或按住 Control 再点）打开菜单，里面有显示窗口、关于、日志、热词和退出。
+- 验证：`swift test --package-path macos/CapsWriterShell`，15 项通过。capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，43 项通过。`./macos/build-shell.sh` 打出 arm64 的 `dist/CapsWriter.app`，短版本 2.23.0，图标文件是 AppIcon。
+
+## v2.22.1
+
+- **外壳能找到 Homebrew 的 ffmpeg**：从 Finder 打开 `CapsWriter.app` 做文件转录时，Python 进程的 PATH 会带上存在的 `/opt/homebrew/bin` 和 `/usr/local/bin`。原来的 PATH 还在。没装 ffmpeg 时，日志仍是「未找到 ffmpeg」。
+- 验证：`swift test --package-path macos/CapsWriterShell`，15 项通过。capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，42 项通过。`./macos/build-shell.sh` 打出的 app 短版本是 2.22.1。
+
+## v2.22.0
+
+- **macOS 外壳**：`./macos/build-shell.sh` 打出未签名的 `dist/CapsWriter.app`。菜单栏、麦克风和辅助功能、右 Option 听写、粘贴，以及批量转录窗口都在这个外壳里。窗口上的地址、六个选项、模型和日志等级跟 `batch_transcribe.py` 一样。窗口先出现，绿灯后才能开始。识别仍由现在的 `start_server` 做。
+- **听写**：按住右 Option 说话，松开后只粘贴识别结果里的 `text`。按得太短会提示「按得太短」，这段没有声音会提示「这段录音是静音」。热词和 LLM 仍由 Python 客户端做。`./build-macos.sh` 的收集目录仍不生成这个 app。
+- 验证：`swift test --package-path macos/CapsWriterShell`，14 项通过。capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，42 项通过。`./macos/build-shell.sh` 打出的 app 短版本是 2.22.0。
+
 ## v2.21.0
 
 - **关闭窗口可以选择**：第一次点关闭时，可选「缩小到托盘」或「退出」。选过一次就记住，之后不再询问。缩到菜单栏后，图标里可以重新显示窗口，也可以退出。

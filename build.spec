@@ -14,8 +14,8 @@ from build_support import (
     exclude_accel_binary,
     exe_icon,
     hiddenimports_for,
+    copy_runtime_folders,
     ensure_darwin_mlx_runtime,
-    link_runtime_folders,
     remove_darwin_apps,
     skip_collected_data,
     use_upx,
@@ -375,7 +375,7 @@ if system() == 'Windows':
         except:
             print(f'警告：无法创建目录连接符 {dest_folder}，请手动创建或复制文件夹')
 
-# Darwin 不走 mklink。缺的目录跳过，已有的链到绝对路径。Windows 列表不动。
-link_runtime_folders(dest_root)
+# Darwin 复制真实目录。缺的跳过。logs 只建空目录。Windows 仍用上面的 mklink。
+copy_runtime_folders(dest_root)
 ensure_darwin_mlx_runtime(dest_root)
 remove_darwin_apps(dest_root)

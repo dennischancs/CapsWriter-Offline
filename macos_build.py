@@ -1,18 +1,22 @@
 # coding: utf-8
 """Apple Silicon 的本地编译和清理。
 
-build 只调用 build.spec 或 build-client.spec。
-clean 只删除仓库里的 build 和 dist。models、日志和仓库外的路径不动。
-dist 里的 start_server / start_client / batch_transcribe 还被进程占用时，两件事都不做。
+build 调用 build.spec，再把 Swift 界面、服务端和复制进来的模型收成 dist/CapsWriter.app。
+client 只打客户端收集目录，不打这个 app。
+clean 只删除仓库里的 build 和 dist。仓库里的 models 不动。
+dist 里的程序还在跑时，两件事都不做。
 解释器会跳过没有 PyInstaller 的 python3。
 """
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from build_support import linked_runtime_errors
 
 
 FULL_SPEC = 'build.spec'
@@ -185,7 +189,15 @@ def remove_artifact(path, root):
 
 def watched_binaries(root):
     root = Path(root)
-    return [root / 'dist' / folder / name for folder, name in WATCHED]
+    paths = [root / 'dist' / folder / name for folder, name in WATCHED]
+    app = root / 'dist' / 'CapsWriter.app'
+    paths.extend([
+        app / 'Contents' / 'MacOS' / 'CapsWriter',
+        app / 'Contents' / 'Resources' / 'runtime' / 'start_server',
+        app / 'Contents' / 'Resources' / 'runtime' / 'start_client',
+        app / 'Contents' / 'Resources' / 'runtime' / 'batch_transcribe',
+    ])
+    return paths
 
 
 def busy_entries(root, lsof_fn):
@@ -302,7 +314,79 @@ def check_collect(dest, names, kind_of, require_mlx):
     return errors
 
 
-def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None):
+def read_project_version(path):
+    text = Path(path).read_text(encoding='utf-8')
+    match = re.search(r'^version = "([^"]+)"', text, re.M)
+    if not match:
+        raise BuildError('pyproject.toml 里没有 version')
+    return match.group(1)
+
+
+def compile_shell(root, runner=None):
+    """编 Swift 界面。runner 只给测试替身用，真编译还要再问一次产物路径。"""
+    root = Path(root)
+    package = root / 'macos' / 'CapsWriterShell'
+    command = ['swift', 'build', '-c', 'release', '--package-path', str(package)]
+    run = subprocess.run if runner is None else runner
+    proc = run(command, cwd=str(root))
+    code = proc.returncode if hasattr(proc, 'returncode') else int(proc)
+    if code != 0:
+        raise BuildError('Swift 界面编译失败，退出码 %s' % code, code or 1)
+    if runner is not None:
+        return None
+    shown = subprocess.run(
+        command + ['--show-bin-path'],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+    )
+    if shown.returncode != 0:
+        detail = (shown.stderr or shown.stdout or '').strip()
+        raise BuildError('找不到 Swift 界面的输出目录%s' % ((': ' + detail) if detail else ''))
+    binary = Path(shown.stdout.strip()) / 'CapsWriter'
+    if not binary.is_file():
+        raise BuildError('没有打出 Swift 界面 %s' % binary)
+    return binary
+
+
+def assemble_macos_app(root, collect, shell_binary, version=None):
+    """把收集目录移进 CapsWriter.app。模型已经在收集目录里，不再复制第二份。"""
+    root = Path(root)
+    collect = Path(collect)
+    shell_binary = Path(shell_binary)
+    if not shell_binary.is_file():
+        raise BuildError('没有 Swift 界面 %s' % shell_binary)
+    if not collect.is_dir():
+        raise BuildError('没有收集目录 %s' % collect)
+    app = root / 'dist' / 'CapsWriter.app'
+    if app.is_symlink():
+        app.unlink()
+    elif app.exists():
+        shutil.rmtree(app)
+    macos_dir = app / 'Contents' / 'MacOS'
+    resources = app / 'Contents' / 'Resources'
+    macos_dir.mkdir(parents=True)
+    resources.mkdir(parents=True)
+    dest_bin = macos_dir / 'CapsWriter'
+    shutil.copy2(shell_binary, dest_bin)
+    dest_bin.chmod(0o755)
+    icon_src = root / 'macos' / 'AppIcon.icns'
+    if not icon_src.is_file():
+        raise BuildError('缺少图标 %s' % icon_src)
+    shutil.copy2(icon_src, resources / 'AppIcon.icns')
+    template = root / 'macos' / 'Info.plist.in'
+    if not template.is_file():
+        raise BuildError('缺少 %s' % template)
+    if version is None:
+        version = read_project_version(root / 'pyproject.toml')
+    plist = template.read_text(encoding='utf-8').replace('__VERSION__', version)
+    (app / 'Contents' / 'Info.plist').write_text(plist, encoding='utf-8')
+    runtime = resources / 'runtime'
+    shutil.move(str(collect), str(runtime))
+    return app
+
+
+def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None, package_app=True, shell_binary=None, swift_runner=None):
     root = Path(root)
     lsof_fn = default_lsof if lsof_fn is None else lsof_fn
     busy = busy_entries(root, lsof_fn)
@@ -327,10 +411,36 @@ def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, 
     dest_name = CLIENT_DIR if client_only else FULL_DIR
     names = ('start_client',) if client_only else FULL_BINARIES
     kind_of = file_kind if kind_of is None else kind_of
-    errors = check_collect(root / 'dist' / dest_name, names, kind_of, require_mlx=not client_only)
+    collect = root / 'dist' / dest_name
+    errors = check_collect(collect, names, kind_of, require_mlx=not client_only)
+    errors.extend(linked_runtime_errors(collect))
     if errors:
         raise BuildError('\n'.join(errors))
-    return [root / 'dist' / dest_name / name for name in names]
+    if client_only or not package_app:
+        return [collect / name for name in names]
+    binary = Path(shell_binary) if shell_binary else compile_shell(root, runner=swift_runner)
+    if binary is None:
+        raise BuildError('没有打出 Swift 界面')
+    version = read_project_version(root / 'pyproject.toml')
+    app = assemble_macos_app(root, collect, binary, version=version)
+    runtime = app / 'Contents' / 'Resources' / 'runtime'
+    packed = check_collect(runtime, names, kind_of, require_mlx=not client_only)
+    packed.extend(linked_runtime_errors(runtime))
+    shell_path = app / 'Contents' / 'MacOS' / 'CapsWriter'
+    if not shell_path.is_file() or not os.access(shell_path, os.X_OK):
+        packed.append('缺少 Swift 界面 %s' % shell_path)
+    else:
+        kind = kind_of(shell_path)
+        if 'Mach-O' not in kind or 'arm64' not in kind:
+            packed.append('%s 不是 arm64 Mach-O：%s' % (shell_path, kind or '未知'))
+    plist = (app / 'Contents' / 'Info.plist').read_text(encoding='utf-8')
+    if version not in plist:
+        packed.append('Info.plist 没有版本 %s' % version)
+    if not (app / 'Contents' / 'Resources' / 'AppIcon.icns').is_file():
+        packed.append('包里没有图标')
+    if packed:
+        raise BuildError('\n'.join(packed))
+    return [app]
 
 
 def dispatch(argv, root, system_name=None, machine=None, **kwargs):

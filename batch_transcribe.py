@@ -37,8 +37,11 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from core.tools.progress_log import ProgressGate
 
 def install_root(file_path=None, frozen=None, executable=None) -> Path:
     """源码在脚本旁边。打包后可执行文件的目录才是配置、core 和服务端所在处。"""
@@ -855,6 +858,12 @@ def build_parser() -> argparse.ArgumentParser:
         description='递归转录文件夹里的音视频。没有同名 srt 时生成 srt、txt 和 json；已有 srt 则跳过',
     )
     parser.add_argument('paths', nargs='+', type=Path, help='文件或文件夹，可以传多个')
+    parser.add_argument(
+        '--model',
+        choices=MODEL_IDS,
+        default=None,
+        help='开始前写入 config_server.py。和当前不一样时先重启服务端',
+    )
     parser.add_argument('--no-recursive', action='store_true', help='只看文件夹的第一层')
     parser.add_argument('--force', action='store_true', help='即使已有同名 srt 也重做')
     parser.add_argument('--hidden', action='store_true', help='包含点开头的文件和目录')
@@ -876,7 +885,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    incoming = sys.argv[1:] if argv is None else argv
+    incoming = list(sys.argv[1:] if argv is None else argv)
+    if incoming[:1] == ['--prepare']:
+        start = '--no-start-server' not in incoming
+        message = prepare_server(start=start, timeout=SERVER_WAIT_SECONDS)
+        print(message)
+        return 0 if str(message).startswith('ready ') else 1
+    if incoming == ['--stop-background']:
+        stop_background_servers(ROOT, server_endpoint()[1])
+        return 0
     if not incoming:
         return run_gui()
     args = build_parser().parse_args(incoming)
@@ -929,7 +946,7 @@ def stamp_line(line, now=None):
 
 
 def log_line_visible(line, level):
-    """窗口只显示不低于所选等级的日志。普通进度行始终显示。"""
+    """窗口只显示不低于所选等级的日志。进度行不按等级隐藏，另按 30 秒收一次。"""
     rank = LOG_RANK.get(str(level or 'INFO').upper(), LOG_RANK['INFO'])
     match = re.match(
         r'^(?:\[?\d{4}-\d{2}-\d{2}[ T]\d\d:\d\d:\d\d(?:\.\d+)?\]?\s+)?([A-Z]{4,8})\b',
@@ -1475,6 +1492,7 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             self.finish_queue = queue.Queue()
             self.close_choice_path = close_choice_path()
             self._tray_ready = False
+            self._progress = ProgressGate()
             self._build(tips=schedule_updates)
             if schedule_updates:
                 self._show_now()
@@ -1538,7 +1556,7 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             level_box.pack(side='left', padx=6)
             if tips:
                 self._tips.append(_HoverTip(model_box, '下次开始前写入配置并重启服务端。正在转录时不能换。'))
-                self._tips.append(_HoverTip(level_box, '窗口里显示到哪一级。DEBUG 最详细，ERROR 只留错误。进度行始终显示。'))
+                self._tips.append(_HoverTip(level_box, '窗口里显示到哪一级。DEBUG 最详细，ERROR 只留错误。发送进度和转录进度至少隔 30 秒一行。'))
 
             checks = (
                 (self.recursive, '包含子文件夹', '会进入里面的文件夹。关掉后只看这一层。'),
@@ -1691,8 +1709,12 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
         def _append(self, text):
             visible = []
             for line in str(text).splitlines(keepends=True):
-                if log_line_visible(line.rstrip('\r\n'), self.log_level.get()):
-                    visible.append(line)
+                body = line.rstrip('\r\n')
+                if not log_line_visible(body, self.log_level.get()):
+                    continue
+                if not self._progress.allow(body):
+                    continue
+                visible.append(line)
             if not visible:
                 return
             self.log.configure(state='normal')

@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.21.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.22.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -42,13 +42,16 @@
 - [x] 2.19.0 文件写好后窗口状态离开「转录中」。日志可选 DEBUG、INFO、WARNING、ERROR。模型可在 SenseVoice Small、Fun-ASR Nano、Qwen3-ASR、Paraformer 之间选，下次开始前写入配置并重启服务端。
 - [x] 2.20.0 字幕写好后，批量转录窗口从「转录中」变成「完成」，关闭按钮能关掉窗口。转录线程不再直接改 Tk。
 - [x] 2.21.0 关闭批量转录窗口时可选缩到菜单栏或退出。选过一次不再询问。退出会结束本程序的服务端、它的子进程和 ffmpeg，不结束命令行对不上的其它程序。
+- [x] 2.22.0 macOS 专用外壳是未签名的 `dist/CapsWriter.app`。菜单栏、权限、右 Option 听写、粘贴，以及和批量脚本同一套选项的窗口都在这个外壳里。识别仍由 `start_server` 做。窗口先出现，没到绿灯不能开始转录。短按提示「按得太短」，静音提示「这段录音是静音」。热词和 LLM 仍在 Python 客户端。
+- [x] 2.22.1 从 Finder 打开外壳做文件转录时，能找到 Homebrew 或 /usr/local 里的 ffmpeg。原来的 PATH 还在。没装 ffmpeg 时仍提示未找到。
+- [x] 2.23.0 外壳有 Cw 图标。关闭批量窗口时可选缩小到菜单栏或退出，勾选「记住我的选择」后才记住。缩到菜单栏后左键打开窗口，右键打开菜单。菜单和关于里能看到 CapsWriter。
 - [x] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [x] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限、并且列不出任何输入设备时，提示去系统设置，进程不崩溃。默认输入编号是 -1、但还能列出输入设备时，日志写出这些编号，约 2 秒打不开就跳过，不把这件事说成没有麦克风权限。没有辅助功能权限时文字留在系统通知和终端里，不上屏。
 
 ### 不做
 
 - [x] 不做 Intel Mac。
-- [x] 不把客户端改写成 Swift，也不套 `mlx-audio` 的 HTTP 服务。
+- [x] 不把识别引擎改写成 Swift，也不套 `mlx-audio` 的 HTTP 服务。Mac 菜单栏外壳可以是 Swift。
 - [x] 不做签名公证的 `.app`，不做 Mac App Store。
 - [x] 不把 llama.cpp Metal 动态库当作 macOS 主路径，不把 GGUF 导出成 CoreML。
 - [x] 不移植 SenseVoice 的 CTC 热词雷达。热词保证留在客户端替换。
@@ -66,7 +69,7 @@
 
 | 框架 | 在本产品里干什么 | 不干什么 |
 | --- | --- | --- |
-| MLX | 主推理。SenseVoice、Fun-ASR-Nano、Qwen3-ASR、Qwen3-ForcedAligner 都在进程里调用 MLX | 不把客户端或界面改写成 Swift |
+| MLX | 主推理。SenseVoice、Fun-ASR-Nano、Qwen3-ASR、Qwen3-ForcedAligner 都在进程里调用 MLX | 识别仍在 Python 进程里。Mac 外壳可以是 Swift |
 | Metal | MLX 的 GPU 设备。启动日志必须看到默认设备是 GPU，而不是 CPU | 不自写 shader，也不再为 macOS 维护一套 llama.cpp b10621 动态库 |
 | CoreML | 没有 MLX 端口的 ONNX 图：Paraformer，以及只在缺标点时才加载的 CT-Transformer。SenseVoice 的现有 fp16 ONNX 保留为可切换退路 | 不把 GGUF 或自回归解码器导出成 `.mlpackage` |
 
@@ -99,8 +102,8 @@ Paraformer 和 CT-Transformer 标点没有可接入的 Python MLX 实现。它�
 ## 4. 非目标
 
 - 不重写识别算法，不改 WebSocket 协议，不改 `text` / `text_accu` 合并。
-- 不把产品改成 Swift，也不把 `mlx-audio` 的 HTTP 服务套在外面再转一层。MLX 在现有 worker 进程里调用。
-- 第一期不做签名公证的 `.app`，不做 Mac App Store。权限先授给运行 Python 的终端。
+- 识别引擎留在 Python。Mac 的菜单栏、权限、快捷键、粘贴和批量窗口可以是 Swift，继续连现在的 `start_server`。不把 `mlx-audio` 的 HTTP 服务套在外面。MLX 仍在现有 worker 进程里调用。
+- 第一期不做签名公证，不做 Mac App Store。Python 客户端的权限仍授给终端。Swift 外壳启动时自己请求麦克风、辅助功能和输入监控，开关仍要自己打开。
 - 不承诺 8GB 内存流畅跑 Qwen3-ASR 1.7B。内存不够时自动改用 0.6B 8bit，并写日志。
 - 不把 Paraformer 当成需要加速的引擎。它仍然是纪念引擎。
 - 不在 Mac 上复刻 CapsLock 吞噬。系统会自己翻转这个灯，默认键必须换掉。

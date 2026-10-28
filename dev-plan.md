@@ -349,6 +349,14 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 
 2026-10-28 版本 2.21.0。关闭批量转录窗口第一次会问缩小到托盘还是退出，选择写在 `logs/batch_window_close.txt`，之后不再问。缩到菜单栏后图标可以显示窗口，也可以退出。退出结束本安装的 `start_server`、它的子进程和本程序拉起的 ffmpeg；命令行对不上的端口占用不杀。先 SIGTERM，还在就 SIGKILL。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，41 项通过。这次没有重编译。
 
+2026-10-28 版本 2.22.0。macOS 专用外壳是 Swift，不搬识别引擎。`./macos/build-shell.sh` 打出未签名的 `dist/CapsWriter.app`。菜单栏、权限、右 Option、粘贴和批量窗口在外壳里，批量参数交给 `batch_transcribe.py`，听写走 `127.0.0.1:6016` 的现有 WebSocket。短按是「按得太短」，静音峰值低于 0.001 是「这段录音是静音」。日志 `logs/shell.log` 只记事件名。热词和 LLM 仍在 Python 客户端，Tk 窗口还在。`swift test --package-path macos/CapsWriterShell`，14 项通过。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，42 项通过。`./macos/build-shell.sh` 打出 arm64 的 `dist/CapsWriter.app`，短版本 2.22.0。
+
+2026-10-28 版本 2.22.1。Finder 打开的外壳 PATH 只有 `/usr/bin:/bin:/usr/sbin:/sbin`，批量转录报「未找到 ffmpeg」。准备、转录和退出时交给 Python 的环境，会把存在的 `/opt/homebrew/bin`、`/usr/local/bin` 加在原 PATH 前面，并保持 `PYTHONUNBUFFERED=1`。目录不存在或已经在 PATH 里时不重复添加。`swift test --package-path macos/CapsWriterShell`，15 项通过。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，42 项通过。`./macos/build-shell.sh` 打出 arm64 的 `dist/CapsWriter.app`，短版本 2.22.1。同样的 Python 在 Finder 的 PATH 下找不到 ffmpeg，加上 `/opt/homebrew/bin` 后找到 `/opt/homebrew/bin/ffmpeg`。
+
+2026-10-28 版本 2.23.0。外壳补上 Cw 图标、关于，以及关闭时的选择框。勾选「记住我的选择」才写入 `logs/batch_window_close.txt`。不勾选或点取消，下次关闭再问。缩到菜单栏后左键打开窗口，右键打开菜单。已经记住的选择可以用「下次关闭再询问」清掉。`swift test --package-path macos/CapsWriterShell`，15 项通过。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，43 项通过。`./macos/build-shell.sh` 打出 arm64 的 `dist/CapsWriter.app`，短版本 2.23.0，包内图标是 AppIcon。
+
+2026-10-28 版本 2.24.0。界面日志里的发送进度和转录进度至少隔 30 秒一行，第一行马上留下，完成、失败和文件名不挡。`./build-macos.sh` 在 PyInstaller 之后编译 Swift，把收集目录移进 `dist/CapsWriter.app/Contents/Resources/runtime`。模型用复制，不用绝对路径符号链接；清理前先解开链接，避免删到仓库里的权重。`./clean-macos.sh` 仍只删 `build` 和 `dist`。`swift test --package-path macos/CapsWriterShell`，17 项通过。capswriter 的 Python 跑 `tests.test_progress_log tests.test_batch_transcribe tests.test_build_support tests.test_macos_build`，66 项通过。这次没有重跑 PyInstaller。
+
 2026-10-27 版本 2.10.1。`./build-macos.sh` 会跳过没有 PyInstaller 的系统 `python3`，依次看 `CAPSWRITER_PYTHON`、仓库 `.venv`、`pyinstaller` 旁边的 Python、`python3.14` / `3.13` / `3.12`，以及 `/opt/homebrew/bin/python3.14`。失败时列出试过的路径。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，97 项通过。选中 `/tmp/capswriter-macos-test/bin/python`。这次没有重跑 PyInstaller。
 
 2026-10-27 版本 2.11.0。`build.spec` 增加 `batch_transcribe`，完整收集目录和 `start_server` 放在一起。只打客户端的 spec 不含它。打包后的程序从所在目录找 `start_server`，源码仍走 `python start_server.py`。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，103 项通过。PyInstaller 6.22.3 打出 arm64 的 `batch_transcribe`，`--help` 和空目录 `--dry-run` 退出码 0。当时 `start_server` 还在听 6016，没有重写它，只把这个新文件放进 `dist/CapsWriter-Offline`。

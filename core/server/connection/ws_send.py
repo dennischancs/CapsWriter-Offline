@@ -1,11 +1,10 @@
-import json
 import asyncio
-from multiprocessing import Queue
 
 from ..state import console
 from ..schema import Result
 from core.protocol import RecognitionMessage
 from core.tools.asyncio_to_thread import to_thread
+from core.tools.progress_log import ProgressGate, show_progress
 from .. import logger
 
 
@@ -15,6 +14,7 @@ async def ws_send(app):
     state = app.state
     queue_out = state.queue_out
     sockets = state.sockets
+    file_progress = ProgressGate()
 
     logger.info("WebSocket 发送任务已启动")
 
@@ -59,14 +59,17 @@ async def ws_send(app):
             if result.type == 'mic':
                 logger.info(f"麦克风识别结果: {result.text}")
             elif result.type == 'file':
-                console.print(f'    转录进度：{result.duration:.2f}s', end='\r')
+                show_progress(
+                    console,
+                    file_progress,
+                    f'    转录进度：{result.duration:.2f}s',
+                    identity=result.task_id,
+                )
                 logger.debug(f"文件转录进度: {result.duration:.2f}s")
                 if result.is_final:
-                    console.print('\n    [green]转录完成')
+                    console.print('    [green]转录完成')
                     logger.info(f"文件转录完成，任务ID: {result.task_id}, 总时长: {result.duration:.2f}s")
 
         except Exception as e:
             logger.error(f"发送结果时发生错误: {e}", exc_info=True)
             print(e)
-
-
