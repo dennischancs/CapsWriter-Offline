@@ -345,6 +345,10 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 
 2026-10-28 版本 2.19.0。转录线程结束时把退出码放进队列，不再只靠主线程的 `after` 改状态。文件写好后状态离开「转录中」。窗口增加日志等级和模型下拉。换模型才写 `config_server.py` 并重启 6016。服务端 `logs/server_latest.log` 追加进窗口，再按等级过滤。capswriter 的 Python 跑 `tests.test_batch_transcribe`，26 项通过。这次没有重编译。
 
+2026-10-28 版本 2.20.0。转录线程不再调用 Tk 的 `after`。完成码只进队列，主线程的 `_drain_finish` 把「转录中」改成「完成」，并恢复开始按钮和模型选择。关闭先 `quit` 再 `destroy`，macOS 上不再因为跨线程改 Tk 而关不掉。空队列不再把完成码一起吞掉。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，35 项通过。这次没有重编译。
+
+2026-10-28 版本 2.21.0。关闭批量转录窗口第一次会问缩小到托盘还是退出，选择写在 `logs/batch_window_close.txt`，之后不再问。缩到菜单栏后图标可以显示窗口，也可以退出。退出结束本安装的 `start_server`、它的子进程和本程序拉起的 ffmpeg；命令行对不上的端口占用不杀。先 SIGTERM，还在就 SIGKILL。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，41 项通过。这次没有重编译。
+
 2026-10-27 版本 2.10.1。`./build-macos.sh` 会跳过没有 PyInstaller 的系统 `python3`，依次看 `CAPSWRITER_PYTHON`、仓库 `.venv`、`pyinstaller` 旁边的 Python、`python3.14` / `3.13` / `3.12`，以及 `/opt/homebrew/bin/python3.14`。失败时列出试过的路径。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，97 项通过。选中 `/tmp/capswriter-macos-test/bin/python`。这次没有重跑 PyInstaller。
 
 2026-10-27 版本 2.11.0。`build.spec` 增加 `batch_transcribe`，完整收集目录和 `start_server` 放在一起。只打客户端的 spec 不含它。打包后的程序从所在目录找 `start_server`，源码仍走 `python start_server.py`。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，103 项通过。PyInstaller 6.22.3 打出 arm64 的 `batch_transcribe`，`--help` 和空目录 `--dry-run` 退出码 0。当时 `start_server` 还在听 6016，没有重写它，只把这个新文件放进 `dist/CapsWriter-Offline`。

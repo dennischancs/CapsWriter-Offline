@@ -27,8 +27,10 @@ import argparse
 import asyncio
 import json
 import os
+import queue
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -92,6 +94,10 @@ MODEL_CHOICES = (
 )
 MODEL_IDS = tuple(item[0] for item in MODEL_CHOICES)
 PART_MARK = '.capswriter-part-'
+CLOSE_TRAY = 'tray'
+CLOSE_QUIT = 'quit'
+_batch_tray = {}
+_BatchTrayTarget = None
 
 _TIME_RE = re.compile(
     r'(?P<h>\d+):(?P<m>\d{2}):(?P<s>\d{2})[,.](?P<ms>\d{3})'
@@ -1096,6 +1102,318 @@ class _HoverTip:
             self.tip = None
 
 
+def close_choice_path(root=None) -> Path:
+    """记住关闭按钮是缩到菜单栏还是退出。放在 logs 里，不进版本库。"""
+    return Path(root or ROOT) / 'logs' / 'batch_window_close.txt'
+
+
+def read_close_choice(path) -> str | None:
+    try:
+        text = Path(path).read_text(encoding='utf-8').strip().lower()
+    except OSError:
+        return None
+    if text in (CLOSE_TRAY, CLOSE_QUIT):
+        return text
+    return None
+
+
+def write_close_choice(path, choice) -> None:
+    if choice not in (CLOSE_TRAY, CLOSE_QUIT):
+        raise ValueError(choice)
+    file = Path(path)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    temporary = file.with_suffix(file.suffix + '.partial')
+    temporary.write_text(choice + '\n', encoding='utf-8')
+    os.replace(temporary, file)
+
+
+def _server_command(command) -> bool:
+    text = command or ''
+    return 'start_server' in text or 'CapsWriter Server' in text
+
+
+def _ffmpeg_command(command) -> bool:
+    parts = (command or '').split()
+    if not parts:
+        return False
+    return os.path.basename(parts[0]) == 'ffmpeg'
+
+
+def recorded_server_pid(base_dir) -> int:
+    from core.tools.instance_guard import read_record, server_lock_path
+    record = read_record(server_lock_path(base_dir))
+    if not record or record.get('mark') != 'capswriter-server':
+        return 0
+    try:
+        pid = int(record.get('pid', '0'))
+    except (TypeError, ValueError):
+        return 0
+    return pid if pid > 1 else 0
+
+
+def descendant_pids(root, children_of, self_pid) -> list[int]:
+    found = []
+    seen = {root, self_pid}
+    pending = list(children_of(root) or [])
+    while pending:
+        pid = pending.pop()
+        if pid in seen or pid <= 1:
+            continue
+        seen.add(pid)
+        found.append(pid)
+        pending.extend(children_of(pid) or [])
+    return found
+
+
+def server_pids_to_stop(recorded_pid, listeners, command_of, children_of, self_pid) -> list[int]:
+    """服务端、它的子进程，以及本程序拉起的 ffmpeg。别的端口占用和自己都不动。"""
+    roots = []
+    for pid in [recorded_pid, *(listeners or [])]:
+        if pid <= 1 or pid == self_pid or pid in roots:
+            continue
+        if _server_command(command_of(pid)):
+            roots.append(pid)
+    for pid in children_of(self_pid) or []:
+        if pid <= 1 or pid == self_pid or pid in roots:
+            continue
+        command = command_of(pid)
+        if _server_command(command) or _ffmpeg_command(command):
+            roots.append(pid)
+    ordered = []
+    seen = set()
+
+    def add(pid):
+        if pid <= 1 or pid == self_pid or pid in seen:
+            return
+        seen.add(pid)
+        ordered.append(pid)
+
+    for root_pid in roots:
+        add(root_pid)
+        for child in descendant_pids(root_pid, children_of, self_pid):
+            add(child)
+    return ordered
+
+
+def signal_pids(pids, kill, alive, pause, term=None, kill_sig=None) -> None:
+    term = signal.SIGTERM if term is None else term
+    kill_sig = signal.SIGKILL if kill_sig is None else kill_sig
+    for pid in pids:
+        try:
+            kill(pid, term)
+        except OSError:
+            pass
+    if pause is not None:
+        pause(0.4)
+    for pid in pids:
+        try:
+            if alive(pid):
+                kill(pid, kill_sig)
+        except OSError:
+            pass
+
+
+def listener_pids(port) -> list[int]:
+    try:
+        result = subprocess.run(
+            ['lsof', '-nP', f'-iTCP:{int(port)}', '-sTCP:LISTEN', '-t'],
+            capture_output=True, text=True, check=False, timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = []
+    for line in (result.stdout or '').splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid > 1:
+            found.append(pid)
+    return found
+
+
+def process_command(pid) -> str:
+    if pid <= 1:
+        return ''
+    try:
+        out = subprocess.check_output(
+            ['ps', '-p', str(int(pid)), '-o', 'command='],
+            text=True, stderr=subprocess.DEVNULL, timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return ''
+    return out.strip()
+
+
+def process_children_map() -> dict[int, list[int]]:
+    try:
+        result = subprocess.run(
+            ['ps', '-ax', '-o', 'pid=,ppid='],
+            capture_output=True, text=True, check=False, timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    children = {}
+    for line in (result.stdout or '').splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        try:
+            pid, parent = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(parent, []).append(pid)
+    return children
+
+
+def stop_background_servers(
+    base_dir, port, kill=None, command_lookup=None, listener_lookup=None,
+    children_lookup=None, recorded_pid=None, self_pid=None, alive=None, pause=None,
+) -> list[int]:
+    """结束本程序的服务端和 ffmpeg。命令行对不上的监听不杀。"""
+    killer = os.kill if kill is None else kill
+    commands = process_command if command_lookup is None else command_lookup
+    listeners = listener_pids if listener_lookup is None else listener_lookup
+    if children_lookup is None:
+        mapping = process_children_map()
+        children_lookup = lambda pid: mapping.get(pid, [])
+    if recorded_pid is None:
+        recorded_pid = recorded_server_pid(base_dir)
+    own = os.getpid() if self_pid is None else self_pid
+    pids = server_pids_to_stop(
+        recorded_pid, listeners(port), commands, children_lookup, own,
+    )
+    signal_pids(
+        pids, killer,
+        _pid_alive if alive is None else alive,
+        time.sleep if pause is None else pause,
+    )
+    return pids
+
+
+def ask_close_choice(master):
+    """第一次关闭时问清是缩到菜单栏还是退出。关掉这个问句不算选择。"""
+    import tkinter as tk
+    from tkinter import ttk
+    picked = {'value': None}
+    dialog = tk.Toplevel(master)
+    dialog.title('关闭批量转录')
+    dialog.resizable(False, False)
+    dialog.transient(master)
+    ttk.Label(
+        dialog,
+        text='关闭窗口时缩到菜单栏，还是退出并结束后台服务？\n选过一次，以后关闭按钮就按这次的来，不再询问。',
+        justify='left',
+    ).pack(padx=16, pady=(14, 8))
+    row = ttk.Frame(dialog)
+    row.pack(padx=16, pady=(0, 14))
+
+    def choose(value):
+        picked['value'] = value
+        dialog.destroy()
+
+    ttk.Button(row, text='缩小到托盘', command=lambda: choose(CLOSE_TRAY)).pack(side='left')
+    ttk.Button(row, text='退出', command=lambda: choose(CLOSE_QUIT)).pack(side='left', padx=8)
+    dialog.protocol('WM_DELETE_WINDOW', dialog.destroy)
+    dialog.grab_set()
+    master.wait_window(dialog)
+    return picked['value']
+
+
+def _batch_tray_target():
+    global _BatchTrayTarget
+    if _BatchTrayTarget is not None:
+        return _BatchTrayTarget
+    import AppKit
+
+    class BatchTrayTarget(AppKit.NSObject):
+        def show_(self, _sender):
+            callback = getattr(self, 'on_show', None)
+            if callback is not None:
+                callback()
+
+        def quit_(self, _sender):
+            callback = getattr(self, 'on_quit', None)
+            if callback is not None:
+                callback()
+
+    _BatchTrayTarget = BatchTrayTarget
+    return _BatchTrayTarget
+
+
+def _install_darwin_batch_tray(on_show, on_quit) -> bool:
+    try:
+        import AppKit
+    except ImportError:
+        return False
+    status = AppKit.NSStatusBar.systemStatusBar()
+    item = status.statusItemWithLength_(AppKit.NSVariableStatusItemLength)
+    button = item.button()
+    if button is not None:
+        button.setTitle_('批量')
+        button.setToolTip_('批量转录')
+    menu = AppKit.NSMenu.alloc().init()
+    target = _batch_tray_target().alloc().init()
+    target.on_show = on_show
+    target.on_quit = on_quit
+    show = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_('显示窗口', 'show:', '')
+    show.setTarget_(target)
+    leave = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_('退出', 'quit:', '')
+    leave.setTarget_(target)
+    menu.addItem_(show)
+    menu.addItem_(leave)
+    item.setMenu_(menu)
+    _batch_tray['item'] = item
+    _batch_tray['bar'] = status
+    _batch_tray['target'] = target
+    return True
+
+
+def _install_pystray_batch_tray(on_show, on_quit) -> bool:
+    try:
+        import pystray
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return False
+    image = Image.new('RGB', (64, 64), '#2f9e44')
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((8, 8, 56, 56), fill='#f2f2f7')
+    menu = pystray.Menu(
+        pystray.MenuItem('显示窗口', lambda icon, item: on_show()),
+        pystray.MenuItem('退出', lambda icon, item: on_quit()),
+    )
+    icon = pystray.Icon('capswriter-batch', image, '批量转录', menu)
+    threading.Thread(target=icon.run, daemon=True).start()
+    _batch_tray['icon'] = icon
+    return True
+
+
+def install_batch_tray(on_show, on_quit) -> bool:
+    """菜单栏图标。Mac 跟 Tk 共用主线程，不再另开一套事件循环。"""
+    if _batch_tray.get('item') is not None or _batch_tray.get('icon') is not None:
+        return True
+    if sys.platform == 'darwin':
+        return _install_darwin_batch_tray(on_show, on_quit)
+    return _install_pystray_batch_tray(on_show, on_quit)
+
+
+def remove_batch_tray() -> None:
+    item = _batch_tray.pop('item', None)
+    bar = _batch_tray.pop('bar', None)
+    icon = _batch_tray.pop('icon', None)
+    _batch_tray.pop('target', None)
+    if item is not None and bar is not None:
+        try:
+            bar.removeStatusItem_(item)
+        except Exception:
+            pass
+    if icon is not None:
+        try:
+            icon.stop()
+        except Exception:
+            pass
+
+
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
 except ImportError:
@@ -1152,10 +1470,11 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             self.stop = StopFlag()
             self.lines = []
             self.finish_code = None
-            import queue
             self.queue = queue.Queue()
             self.ready_queue = queue.Queue()
             self.finish_queue = queue.Queue()
+            self.close_choice_path = close_choice_path()
+            self._tray_ready = False
             self._build(tips=schedule_updates)
             if schedule_updates:
                 self._show_now()
@@ -1434,6 +1753,7 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             self._model_box.configure(state='disabled' if busy else 'readonly')
 
         def _run(self, args, stop):
+            # macOS 上只有主线程能碰 Tk。这里只写队列，状态由 _drain_finish 改。
             writer = _QueueWriter(self.queue)
             old_out, old_err = sys.stdout, sys.stderr
             code = 2
@@ -1449,19 +1769,6 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
                 sys.stderr = old_err
                 self.finish_code = code
                 self.finish_queue.put(code)
-                self._apply_finish(code)
-
-        def _apply_finish(self, code):
-            label = batch_exit_label(code)
-            def paint():
-                if not self.master.winfo_exists():
-                    return
-                self.status.set(label)
-                self._set_controls_busy(False)
-            try:
-                self.master.after(0, paint)
-            except Exception:
-                return
 
         def _drain_finish(self):
             try:
@@ -1470,8 +1777,10 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
                 while True:
                     code = self.finish_queue.get_nowait()
                     self._finished(code)
-            except Exception:
+            except queue.Empty:
                 pass
+            except tk.TclError:
+                return
             try:
                 if self.master.winfo_exists():
                     self.master.after(80, self._drain_finish)
@@ -1489,9 +1798,86 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             self._set_controls_busy(False)
 
         def _close(self):
+            saved = read_close_choice(self.close_choice_path)
+            choice = saved
+            if choice is None:
+                choice = self._ask_close()
+            if choice == CLOSE_TRAY:
+                if not self._hide_to_tray():
+                    self.status.set('托盘不可用，窗口还在')
+                    return
+                if saved is None:
+                    self._remember_close(CLOSE_TRAY)
+                return
+            if choice != CLOSE_QUIT:
+                return
+            if saved is None:
+                self._remember_close(CLOSE_QUIT)
+            self._quit_app()
+
+        def _remember_close(self, choice):
+            try:
+                write_close_choice(self.close_choice_path, choice)
+            except OSError:
+                return
+
+        def _ask_close(self):
+            ask = getattr(self, 'ask_close', None)
+            if ask is not None:
+                return ask()
+            return ask_close_choice(self.master)
+
+        def _hide_to_tray(self):
+            if not self._install_tray():
+                return False
+            try:
+                self.master.withdraw()
+            except tk.TclError:
+                return False
+            return True
+
+        def _install_tray(self):
+            if self._tray_ready:
+                return True
+
+            def show():
+                self.master.after(0, self._show_from_tray)
+
+            def leave():
+                self.master.after(0, self._quit_app)
+
+            self._tray_ready = bool(install_batch_tray(show, leave))
+            return self._tray_ready
+
+        def _show_from_tray(self):
+            try:
+                if not self.master.winfo_exists():
+                    return
+                self.master.deiconify()
+                self.master.lift()
+            except tk.TclError:
+                return
+
+        def _stop_background(self):
+            _host, port = server_endpoint()
+            stop_background_servers(ROOT, port)
+
+        def _quit_app(self):
             self.preparing = False
             self.stop.request()
-            self.master.destroy()
+            try:
+                self._stop_background()
+            finally:
+                remove_batch_tray()
+                self._tray_ready = False
+                try:
+                    self.master.quit()
+                except tk.TclError:
+                    pass
+                try:
+                    self.master.destroy()
+                except tk.TclError:
+                    pass
 
     created = root is None
     if created and TkinterDnD is not None:

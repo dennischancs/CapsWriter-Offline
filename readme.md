@@ -55,7 +55,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 - [模型对比](模型对比.md) — 这台 Mac mini M4 上四个 MLX 模型的耗时、字错率和 GPU 占用，没有录音正文
 - [优化计划](优化计划.md) — SenseVoice Small 要把字错率收到 10% 以内；神经引擎只做一次对照，不拿它提精度
 
-当前版本是 `2.19.0`，只认 `pyproject.toml`。
+当前版本是 `2.21.0`，只认 `pyproject.toml`。
 
 
 ## 💻 平台支持
@@ -63,7 +63,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 目前保证：
 
 - **Windows 10/11 (64位)**：DirectML、CapsLock 长按抑制，和原来一样。
-- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。打开客户端会带起没在跑的服务端；再打开一次不会再加载一份模型。本地编译运行 `./build-macos.sh`，清理运行 `./clean-macos.sh`。系统自带的 `python3` 不够。`./build-macos.sh` 用本机 miniforge 的 `capswriter` 环境，这个环境里要有 PyInstaller。收集目录留下 `start_client`、`start_server` 和 `batch_transcribe`，不再生成 `CapsWriter.app` 和 `CapsWriter Server.app`。菜单栏由 `start_client` 提供。默认模型是 SenseVoice Small，走 MLX 的 GPU。批量转录在收集目录运行 `./batch_transcribe` 打开窗口，或 `./batch_transcribe 文件夹` 直接转。源码是 `python batch_transcribe.py`。地址栏可以粘贴，也可以从 Finder 拖入一个文件或文件夹。窗口里可以选日志等级，也可以在 SenseVoice Small、Fun-ASR Nano、Qwen3-ASR、Paraformer 之间换模型。换模型后，下次开始前写入配置并重启服务端。字幕写好后状态离开「转录中」。日志行前面是 `[年-月-日 时:分:秒.毫秒]`。已有同名 `.srt` 就跳过；没有则生成 `.srt`、`.txt` 和 `.json`。超过 2 小时的文件先按 2 小时切开，再合并成这三份。不做签名公证。
+- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。打开客户端会带起没在跑的服务端；再打开一次不会再加载一份模型。本地编译运行 `./build-macos.sh`，清理运行 `./clean-macos.sh`。系统自带的 `python3` 不够。`./build-macos.sh` 用本机 miniforge 的 `capswriter` 环境，这个环境里要有 PyInstaller。收集目录留下 `start_client`、`start_server` 和 `batch_transcribe`，不再生成 `CapsWriter.app` 和 `CapsWriter Server.app`。菜单栏由 `start_client` 提供。默认模型是 SenseVoice Small，走 MLX 的 GPU。批量转录在收集目录运行 `./batch_transcribe` 打开窗口，或 `./batch_transcribe 文件夹` 直接转。源码是 `python batch_transcribe.py`。地址栏可以粘贴，也可以从 Finder 拖入一个文件或文件夹。窗口里可以选日志等级，也可以在 SenseVoice Small、Fun-ASR Nano、Qwen3-ASR、Paraformer 之间换模型。换模型后，下次开始前写入配置并重启服务端。字幕写好后状态离开「转录中」。第一次关闭会问缩小到菜单栏还是退出，选过一次不再问。退出会停掉后台服务端。日志行前面是 `[年-月-日 时:分:秒.毫秒]`。已有同名 `.srt` 就跳过；没有则生成 `.srt`、`.txt` 和 `.json`。超过 2 小时的文件先按 2 小时切开，再合并成这三份。不做签名公证。
 - **Linux**：暂无环境进行测试和打包，无法保证兼容性。
 
 [LazyTyper](https://lazytyper.com/) 和 [闪电说](https://shandianshuo.cn/) 也是很优秀的作品，都有离线引擎，都支持 Windows Linux 与 MacOS，并都有漂亮的图形化页面，推荐使用。

@@ -1,5 +1,16 @@
 # 更新日志
 
+## v2.21.0
+
+- **关闭窗口可以选择**：第一次点关闭时，可选「缩小到托盘」或「退出」。选过一次就记住，之后不再询问。缩到菜单栏后，图标里可以重新显示窗口，也可以退出。
+- **退出会结束后台**：退出时结束本程序的服务端、它拉起的子进程，以及正在转码的 ffmpeg。其它占用端口的程序不动。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，41 项通过。这次没有重跑 PyInstaller。
+
+## v2.20.0
+
+- **转录结束后窗口能关掉**：srt、txt 和 json 写好后，状态从「转录中」变成「完成」。关闭按钮会退出窗口，不再停在那里。开始按钮和模型选择也会重新可用。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，35 项通过。这次没有重跑 PyInstaller。
+
 ## v2.19.0
 
 - **转录结束后不再卡在「转录中」**：srt、txt 和 json 写好后，窗口状态会变成「完成」。有失败是「完成，有失败」，中途停止是「已停止」。开始按钮和模型选择也会重新可用。
