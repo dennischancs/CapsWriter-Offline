@@ -321,7 +321,7 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 
 ## 12. 批量脚本
 
-[batch_transcribe.py](batch_transcribe.py) 按「一条 WebSocket、不预导出整段 WAV」转录。跳过只看同名 `.srt`。超过 2 小时先按 2 小时切开再合并，不再整段失败后才切。默认识别模型是 SenseVoice Small，走 GPU。
+[batch_transcribe.py](batch_transcribe.py) 按「一条 WebSocket、不预导出整段 WAV」转录。已经写好的同名 `.srt` 才跳过，不复写；空的或没写完的下次再做。超过 2 小时先按 2 小时切开再合并，不再整段失败后才切。默认识别模型是 SenseVoice Small，走 GPU。
 
 完整收集目录另外带可执行文件 `batch_transcribe`。打包后它从自己旁边找 `start_server`，不再用本程序去执行 `start_server.py`。源码运行仍用当前 Python。
 
@@ -336,6 +336,12 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 2026-10-27 版本 2.10.0。新增 `build-macos.sh` 和 `clean-macos.sh`。编译走 `macos_build.py`，默认 `build.spec`，参数 `client` 才走 `build-client.spec`。清理只删 `build` 和 `dist`；`dist` 若是指向仓库外的符号链接，只解开链接。`start_server` 或 `start_client` 还被占用时，清理和编译都直接退出。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，93 项通过。这次没有重跑 PyInstaller。
 
 2026-10-28 版本 2.15.0。双击批量转录先显示窗口，再在后台准备服务端。左下角红灯还没好，黄灯正在准备，绿灯写 Ready。没绿灯时开始转录不会跑。地址栏和打开在准备期间仍可用。`/private/tmp/capswriter-macos-test/bin/python -m unittest tests.test_batch_transcribe tests.test_build_support`，27 项通过。`./build-macos.sh` 重新打出 08:03 的 arm64 `batch_transcribe`。
+
+2026-10-29 版本 2.36.0。`./build-macos.sh` 不带参数只留下 `dist/CapsWriter.app`。`./build-macos.sh dmg` 只留下 `dist/CapsWriter-<version>.dmg`，打完后去掉旁边的 app。`client` 仍只打客户端。两个参数一起写会退出，不删除已有产物。capswriter 的 Python 跑 `tests.test_macos_build`，25 项通过。没有重跑 PyInstaller。
+
+2026-10-29 版本 2.35.0。中断后再开始会重新遍历，已经写好的同名 `.srt` 不复写。空文件、没有时间轴的半截，以及 `.partial` 不算做完，下次继续。只有勾上「已有字幕也重做」才覆盖成品。字幕先写临时文件再替换。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，56 项通过。没有重打 dmg。只重打 `batch_transcribe` 换进 `/Applications/CapsWriter.app`，`result_handler.py` 和 `srt_from_txt.py` 也换成同一份。包内试跑：3 个文件跳过 1 个已完成的，空字幕和没有字幕的待转录，已完成正文不变。app 里的 Qwen 规格仍是 `1.7b`，没有改回 `auto`。短版本改为 2.35.0。
+
+2026-10-29 版本 2.34.0。批量窗口的停止不再等当前文件做完。第一次点下去就向转录进程发 SIGINT，半秒后还在就 SIGKILL；再点一次立刻强制结束。已经写好的字幕留下，后面的文件不再开始。服务端如果不是这一轮新拉起、或者已经在自己的会话里，不会被卸掉。日志不再用整段 SwiftUI 文本重画，改成 NSTextView：贴底时跟着最新一行，离开底部就停住，窗口可以拖动。按钮旁边显示「当前 N / 总计 M」，跳过的文件不进总计。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，52 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，22 项通过。没有重打 dmg，也没有重跑 PyInstaller。`dist` 里没有 app，只有 6.3GB 的 `CapsWriter-2.33.0.dmg`。新界面放进 `/Applications/CapsWriter.app`，短版本 2.34.0。签名仍是链接器的临时签名，没有把包内文件封死。
 
 2026-10-28 版本 2.16.0。窗口隐藏等待服务端、超时系数、单文件最少等待和切开小时数。固定 180 秒、4 倍加 60 秒、最少 180 秒、超过 2 小时切开。鼠标停在控件上才看到说明。`/usr/bin/python3 -m unittest tests.test_batch_transcribe`，19 项通过。conda Python 3.14 的版本检查 1 项通过。带 PyInstaller 的解释器已经不在，这次没有重编译。
 

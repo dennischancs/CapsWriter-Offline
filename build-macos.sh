@@ -1,5 +1,6 @@
 #!/bin/bash
-# Apple Silicon 一次打出 dist/CapsWriter.app 和 dist/CapsWriter-<version>.dmg。
+# Apple Silicon。不带参数只打 dist/CapsWriter.app。
+# 参数 dmg 只打 dist/CapsWriter-<version>.dmg，成功后不留下旁边的 app。
 # app 里有 Swift 界面、服务端、批量转录和复制进来的模型。
 # dmg 里是这个 app，以及指向「应用程序」的链接。
 # 成功后清掉 PyInstaller 的 build、Swift 的 .build 和 /tmp/cw-swift。

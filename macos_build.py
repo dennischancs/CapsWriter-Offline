@@ -1,9 +1,9 @@
 # coding: utf-8
 """Apple Silicon 的本地编译和清理。
 
-build 一次打出 dist/CapsWriter.app 和 dist/CapsWriter-<version>.dmg。
-app 里是 Swift 界面、服务端和复制进来的模型。
-dmg 里是这个 app，以及指向 /Applications 的 Applications 链接。
+不带参数只打 dist/CapsWriter.app，不打 dmg。
+参数 dmg 只打 dist/CapsWriter-<version>.dmg，成功后不留下旁边的 app。
+镜像里是这个 app，以及指向 /Applications 的 Applications 链接。
 client 只打客户端收集目录，不打 app，也不打 dmg。
 成功之后删掉 PyInstaller 的 build、Swift 的 .build，以及 /tmp/cw-swift。
 clean 连同 dist 一起删。仓库里的 models 不动。
@@ -435,6 +435,20 @@ def hdiutil_command(layout):
     ]
 
 
+def remove_loose_app(app):
+    """dmg 成功之后去掉 dist 里的 app，只留下磁盘镜像。"""
+    app = Path(app)
+    try:
+        if app.is_symlink() or app.is_file():
+            app.unlink()
+        elif app.exists():
+            shutil.rmtree(app)
+    except OSError as exc:
+        raise BuildError('dmg 已打出，但没能去掉旁边的 %s：%s' % (app.name, exc))
+    if app.exists():
+        raise BuildError('dmg 已打出，但旁边还有 %s' % app)
+
+
 def create_dmg(app, version, runner=None):
     """打出未签名的 dmg。镜像里是 app 和 Applications 链接，不是符号链接回仓库。"""
     layout = stage_dmg(app, version)
@@ -558,8 +572,23 @@ def assemble_macos_app(root, collect, shell_binary, version=None):
     return app
 
 
-def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None, package_app=True, shell_binary=None, swift_runner=None, scratch=None, dmg_runner=None):
+def build_target(extra):
+    """空参数是 app，dmg 只要磁盘镜像，client 只要客户端。不能同时写两个。"""
+    extra = list(extra or [])
+    if extra == []:
+        return 'app'
+    if extra == ['client']:
+        return 'client'
+    if len(extra) == 1 and extra[0].lower() == 'dmg':
+        return 'dmg'
+    return None
+
+
+def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None, package_app=True, shell_binary=None, swift_runner=None, scratch=None, dmg_runner=None, output='app'):
     root = Path(root)
+    if output not in ('app', 'dmg', 'client'):
+        raise BuildError('输出只能是 app 或 dmg')
+    client_only = client_only or output == 'client'
     scratch = SWIFT_SCRATCH if scratch is None else Path(scratch)
     lsof_fn = default_lsof if lsof_fn is None else lsof_fn
     busy = busy_entries(root, lsof_fn)
@@ -614,17 +643,33 @@ def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, 
         packed.append('包里没有图标')
     if packed:
         raise BuildError('\n'.join(packed))
-    image = create_dmg(app, version, runner=dmg_runner)
     drop_process_junk(root, scratch=scratch)
-    return [app, image]
+    if output != 'dmg':
+        return [app]
+    image = create_dmg(app, version, runner=dmg_runner)
+    remove_loose_app(app)
+    return [image]
+
+
+USAGE = '用法: ./build-macos.sh [dmg|client]  或  ./clean-macos.sh'
 
 
 def dispatch(argv, root, system_name=None, machine=None, **kwargs):
     argv = list(argv)
     extra = argv[2:] if len(argv) > 2 else []
-    if len(argv) < 2 or argv[1] not in ('build', 'clean') or extra not in ([], ['client']) or (argv[1] == 'clean' and extra):
-        print('用法: build-macos.sh [client]  或  clean-macos.sh', file=sys.stderr)
+    if len(argv) < 2 or argv[1] not in ('build', 'clean'):
+        print(USAGE, file=sys.stderr)
         return 2
+    if argv[1] == 'clean':
+        target = 'app'
+        if extra:
+            print(USAGE, file=sys.stderr)
+            return 2
+    else:
+        target = build_target(extra)
+        if target is None:
+            print(USAGE, file=sys.stderr)
+            return 2
     if not is_apple_silicon(system_name, machine):
         print('只支持 Apple Silicon（M 系列）。', file=sys.stderr)
         return 2
@@ -643,7 +688,7 @@ def dispatch(argv, root, system_name=None, machine=None, **kwargs):
             else:
                 print('没有需要清理的编译文件。')
             return 0
-        made = build_repo(root, client_only=extra == ['client'], **{
+        made = build_repo(root, client_only=target == 'client', output=target, **{
             key: kwargs[key]
             for key in ('python', 'runner', 'kind_of', 'lsof_fn', 'probe')
             if key in kwargs

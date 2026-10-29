@@ -1,5 +1,21 @@
 # 更新日志
 
+## v2.36.0
+
+- **编译二选一**：`./build-macos.sh` 不带参数，只打出未签名的 `dist/CapsWriter.app`，不打 dmg。`./build-macos.sh dmg` 只打出 `dist/CapsWriter-2.36.0.dmg`，成功后旁边不再留下 app。打开后把 CapsWriter 拖到「应用程序」。`./build-macos.sh client` 仍只打客户端。两个参数不能一起写。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_macos_build`，25 项通过。没有重跑 PyInstaller，也没有打出新的 app 或 dmg。
+
+
+## v2.35.0
+
+- **中断后再开始不复写**：重新遍历时，已经写好的同名 `.srt` 原样留下，不进入待转录。空文件、没有时间轴的半截，以及还没替换上去的 `.partial`，都不算做完，下次继续。只有勾上「已有字幕也重做」才会覆盖成品。字幕先写入临时文件再替换，中断不会把已经写好的文件截成空的。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，56 项通过。没有重打 dmg。只重打了 `batch_transcribe` 并换进 `/Applications/CapsWriter.app`，旁边的字幕写入也换成同一份源码。安装包里的试跑是 3 个文件跳过 1 个已完成的，空字幕和没有字幕的留在待转录，已完成的正文没有变。
+
+## v2.34.0
+
+- **批量窗口**：点「停止转录」马上中断，和命令行 Ctrl+C 一样。已经写好的字幕留下，后面的文件不再开始。再点一次强制结束。本来就开着的服务端不会被卸掉。日志改成系统文本视图，贴底时跟着最新一行，往上翻就停住，窗口可以照常拖动。上面显示当前第几个、一共几个，跳过的文件不算进总计。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，52 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，22 项通过。没有重打 dmg，也没有重跑 PyInstaller。`dist` 里现在只有 `CapsWriter-2.33.0.dmg`，没有 app。新的 Swift 界面放进了 `/Applications/CapsWriter.app`，短版本 2.34.0，仍是链接器的临时签名，没有把模型目录封进签名。
+
 ## v2.33.0
 
 - **安装盘**：`./build-macos.sh` 在 `dist/CapsWriter.app` 旁边打出未签名的 `dist/CapsWriter-2.33.0.dmg`。打开后左边是 CapsWriter，右边是「应用程序」，拖过去即可安装。`./build-macos.sh client` 不打这个盘。`./clean-macos.sh` 仍一次删掉 `dist`，盘和 app 一起消失，仓库里的模型不动。

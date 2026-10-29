@@ -55,7 +55,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 - [模型对比](模型对比.md) — 这台 Mac mini M4 上四个 MLX 模型的耗时、字错率和 GPU 占用，没有录音正文
 - [优化计划](优化计划.md) — SenseVoice Small 要把字错率收到 10% 以内；神经引擎只做一次对照，不拿它提精度
 
-当前版本是 `2.33.0`，只认 `pyproject.toml`。
+当前版本是 `2.36.0`，只认 `pyproject.toml`。
 
 
 ## 💻 平台支持
@@ -63,7 +63,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 目前保证：
 
 - **Windows 10/11 (64位)**：DirectML、CapsLock 长按抑制，和原来一样。
-- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。打开客户端会带起没在跑的服务端；再打开一次不会再加载一份模型。一次编译运行 `./build-macos.sh`，打出未签名的 `dist/CapsWriter.app` 和 `dist/CapsWriter-2.33.0.dmg`。Swift 界面、服务端、批量转录和复制进去的模型都在这个 app 里，不是指回仓库的符号链接。打开 dmg，把 CapsWriter 拖到「应用程序」。`./build-macos.sh client` 只打客户端，不组装 app，也不打 dmg。清理运行 `./clean-macos.sh`，一次删掉 `build`、`dist`、Swift 的 `.build` 和 `/tmp/cw-swift`。仓库里的 `models` 不动。这些程序还在跑时不删，也不开始编译。系统自带的 `python3` 不够。`./build-macos.sh` 用本机 miniforge 的 `capswriter` 环境，这个环境里要有 PyInstaller。菜单栏由这个 app 提供。默认模型是 SenseVoice Small，走 MLX 的 GPU。批量转录在收集目录运行 `./batch_transcribe` 打开窗口，或 `./batch_transcribe 文件夹` 直接转。源码是 `python batch_transcribe.py`。地址栏可以粘贴，也可以从 Finder 拖入一个文件或文件夹。窗口里可以选日志等级，也可以在 SenseVoice Small、Fun-ASR Nano、Qwen3-ASR 1.7B、Qwen3-ASR 0.6B、Paraformer 之间换模型。一换就写入服务端配置。server 标签「现在这样跑」里的模型和 Qwen 规格，跟批量菜单显示的是同一个值：`auto` 按内存展开成 1.7b 或 0.6b，选了具体规格就显示那个规格。client 标签没有模型项，不跟着变。下次开始转录前，如果服务端进程里还是上一个模型，会先停掉再拉起。配置文件已经改过也一样。字幕写好后状态离开「转录中」。第一次关闭会问缩小到菜单栏还是退出，选过一次不再问。退出会停掉后台服务端。日志行前面是 `[年-月-日 时:分:秒.毫秒]`。已有同名 `.srt` 就跳过；没有则生成 `.srt`、`.txt` 和 `.json`。超过 2 小时的文件先按 2 小时切开，再合并成这三份。不做签名公证。
+- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。打开客户端会带起没在跑的服务端；再打开一次不会再加载一份模型。不带参数运行 `./build-macos.sh`，只打出未签名的 `dist/CapsWriter.app`，不打 dmg。Swift 界面、服务端、批量转录和复制进去的模型都在这个 app 里，不是指回仓库的符号链接。要安装盘就运行 `./build-macos.sh dmg`，只打出 `dist/CapsWriter-2.36.0.dmg`，成功后旁边不再留下 app。打开 dmg，把 CapsWriter 拖到「应用程序」。`./build-macos.sh client` 只打客户端，不组装 app，也不打 dmg。两个参数不能一起写。清理运行 `./clean-macos.sh`，一次删掉 `build`、`dist`、Swift 的 `.build` 和 `/tmp/cw-swift`。仓库里的 `models` 不动。这些程序还在跑时不删，也不开始编译。系统自带的 `python3` 不够。`./build-macos.sh` 用本机 miniforge 的 `capswriter` 环境，这个环境里要有 PyInstaller。菜单栏由这个 app 提供。默认模型是 SenseVoice Small，走 MLX 的 GPU。批量转录在收集目录运行 `./batch_transcribe` 打开窗口，或 `./batch_transcribe 文件夹` 直接转。源码是 `python batch_transcribe.py`。地址栏可以粘贴，也可以从 Finder 拖入一个文件或文件夹。窗口里可以选日志等级，也可以在 SenseVoice Small、Fun-ASR Nano、Qwen3-ASR 1.7B、Qwen3-ASR 0.6B、Paraformer 之间换模型。一换就写入服务端配置。server 标签「现在这样跑」里的模型和 Qwen 规格，跟批量菜单显示的是同一个值：`auto` 按内存展开成 1.7b 或 0.6b，选了具体规格就显示那个规格。client 标签没有模型项，不跟着变。下次开始转录前，如果服务端进程里还是上一个模型，会先停掉再拉起。配置文件已经改过也一样。字幕写好后状态离开「转录中」。第一次关闭会问缩小到菜单栏还是退出，选过一次不再问。退出会停掉后台服务端。日志行前面是 `[年-月-日 时:分:秒.毫秒]`。点停止会马上中断这一轮，已经写好的字幕留下，后面的文件不再开始；再点一次强制结束。本来就开着的服务端不会被卸掉。日志贴在底部时跟着最新一行，往上翻就停住，窗口可以照常拖动。批量进行时显示当前第几个、一共几个，跳过的文件不算进去。已经写好的同名 `.srt` 会跳过，不复写。空的或没写完的下次再做。中断后重新开始会再遍历，已有成品保持原样，只从未做完的文件继续。没有成品则生成 `.srt`、`.txt` 和 `.json`。超过 2 小时的文件先按 2 小时切开，再合并成这三份。不做签名公证。
 - **Linux**：暂无环境进行测试和打包，无法保证兼容性。
 
 [LazyTyper](https://lazytyper.com/) 和 [闪电说](https://shandianshuo.cn/) 也是很优秀的作品，都有离线引擎，都支持 Windows Linux 与 MacOS，并都有漂亮的图形化页面，推荐使用。
@@ -88,7 +88,7 @@ Swift 用的是系统自己的 AppKit / SwiftUI。启动时先把窗口放到前
 
 跑起来卡死，是因为 macOS 只允许主线程碰 Tk。转录若在别的线程里改窗口，状态会停在「转录中」，关闭也没反应。后来改成工作线程只把结果放进队列，主线程再关掉窗口。菜单栏也要这条主线程，不能再开第二套事件循环。菜单栏和 Tk 不能放在同一个进程里，所以菜单还在跑的时候，热词之类的提示不开 Tk 窗口。主线程一旦去等模型、抽音频或刷日志，按钮和关闭就冻住。日志若每零点几秒插一行，主线程一直在改文本，窗口被拉得很长，点什么都慢。
 
-Swift 外壳和识别不在同一个进程里。界面只管窗口、菜单栏、权限、快捷键和粘贴。识别、ffmpeg 和 WebSocket 在旁边。client 和 server 直接读两个配置文件，不导入打包后的 `batch_transcribe`。发送进度和转录进度各自只占一行，数字从这段音频的 0、60、120 改到结尾，完成时间留在这一行上。处理耗时另起一行。完成、失败和文件名仍马上留下。所以转录的时候界面仍然顺。要开的 macOS 窗口就是 `./build-macos.sh` 打出的 `dist/CapsWriter.app`。
+Swift 外壳和识别不在同一个进程里。界面只管窗口、菜单栏、权限、快捷键和粘贴。识别、ffmpeg 和 WebSocket 在旁边。client 和 server 直接读两个配置文件，不导入打包后的 `batch_transcribe`。发送进度和转录进度各自只占一行，数字从这段音频的 0、60、120 改到结尾，完成时间留在这一行上。处理耗时另起一行。完成、失败和文件名仍马上留下。所以转录的时候界面仍然顺。要开的 macOS 窗口就是 `./build-macos.sh` 打出的 `dist/CapsWriter.app`。安装盘是另一个命令：`./build-macos.sh dmg`。
 
 
 ## 🎬 快速开始
