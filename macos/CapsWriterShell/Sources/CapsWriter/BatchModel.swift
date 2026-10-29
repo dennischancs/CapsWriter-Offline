@@ -23,7 +23,9 @@ final class BatchModel: ObservableObject {
     @Published var lamp: Lamp = .red
     @Published var readyText = "还没准备好"
     @Published var status = "空闲"
-    @Published var log = ""
+    @Published var progressText = "当前 0 / 总计 0"
+    @Published var progressValue = 0.0
+    @Published var progressTotal = 0
     @Published var ready = false
     @Published var busy = false
     @Published var preparing = false
@@ -35,7 +37,11 @@ final class BatchModel: ObservableObject {
     var onConfigurationChanged: () -> Void = {}
 
     private var partial = ""
-    private var progressLog = ProgressLog()
+    private var terminalLog = TerminalLog()
+    private var batchCount = BatchCount()
+    private var logText = ""
+    private var logSink: (([LogEdit]) -> Void)?
+    private var stopGeneration = 0
     private var prepareProcess: Process?
     private var batchProcess: Process?
     private var stoppedByUser = false
@@ -241,6 +247,11 @@ final class BatchModel: ObservableObject {
             return
         }
         stoppedByUser = false
+        terminalLog = TerminalLog()
+        batchCount = BatchCount()
+        progressText = batchCount.text
+        progressValue = 0
+        progressTotal = 0
         busy = true
         status = "转录中"
         note("batch started")
@@ -274,6 +285,11 @@ final class BatchModel: ObservableObject {
     }
 
     func stop() {
+        if status == "正在停止" {
+            stopGeneration += 1
+            forceStop()
+            return
+        }
         stoppedByUser = true
         let switching = waitingForModelSwitch
         waitingForModelSwitch = false
@@ -283,13 +299,57 @@ final class BatchModel: ObservableObject {
         if switching {
             busy = false
             note("model switch cancelled")
+        } else if busy {
+            append("正在停止\n")
         }
-        if let batchProcess, batchProcess.isRunning {
-            batchProcess.terminate()
+        stopGeneration += 1
+        let generation = stopGeneration
+        signalRunning(SIGINT)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            Task { @MainActor in
+                guard let self, self.stopGeneration == generation else { return }
+                self.forceStop()
+            }
         }
-        if let prepareProcess, prepareProcess.isRunning {
-            prepareProcess.terminate()
+    }
+
+    func attachLog(_ sink: @escaping ([LogEdit]) -> Void) {
+        logSink = sink
+        sink([.reset(logText)])
+    }
+
+    private func forceStop() {
+        signalRunning(SIGKILL)
+    }
+
+    private func signalRunning(_ sig: Int32) {
+        for process in [batchProcess, prepareProcess] {
+            guard let process, process.isRunning else { continue }
+            let pid = process.processIdentifier
+            let targets = getpgid(pid) == pid
+                ? stopPids(groupLeader: true, pid: pid)
+                : transcriptionStopPids(root: pid, rows: Self.processRows())
+            for target in targets {
+                _ = kill(target, sig)
+            }
         }
+    }
+
+    private static func processRows() -> [ProcessRow] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-axo", "pid=,ppid=,command="]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return []
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return parseProcessRows(String(data: data, encoding: .utf8) ?? "")
     }
 
     func stopBackground(done: @escaping () -> Void) {
@@ -439,27 +499,62 @@ final class BatchModel: ObservableObject {
 
     private func append(_ text: String) {
         partial += text
+        var edits: [LogEdit] = []
         while let range = partial.range(of: "\n") ?? partial.range(of: "\r") {
             let line = String(partial[..<range.lowerBound])
             partial.removeSubrange(..<range.upperBound)
-            publish(line)
+            edits.append(contentsOf: stage(line))
         }
+        deliver(coalesced(edits))
     }
 
     private func flushPartial() {
         if partial.isEmpty { return }
-        publish(partial)
+        let edits = stage(partial)
         partial = ""
+        deliver(edits)
     }
 
-    private func publish(_ line: String) {
-        let now = Date()
-        let stamped = stampLine(line, now: now)
-        guard logLineVisible(stamped, level: logLevel) else { return }
-        progressLog.apply(&log, stamped)
-        if log.count > 200_000 {
-            log.removeFirst(log.count - 200_000)
+    private func stage(_ line: String) -> [LogEdit] {
+        let plain = plainLogLine(line)
+        if plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [] }
+        let stamped = stampLine(plain, now: Date())
+        guard logLineVisible(stamped, level: logLevel) else { return [] }
+        if updateBatchCount(stamped, count: &batchCount) {
+            progressText = batchCount.text
+            progressValue = batchCount.fraction
+            progressTotal = batchCount.total
         }
+        guard let edit = terminalLog.ingest(stamped) else { return [] }
+        switch edit {
+        case .append(let row):
+            if !logText.isEmpty && !logText.hasSuffix("\n") { logText += "\n" }
+            logText += row + "\n"
+        case .replace(let kind, let row):
+            logText = replacingLastProgress(logText, kind: kind, with: row)
+        case .reset(let text):
+            logText = text
+        }
+        if logText.count > 200_000 {
+            logText.removeFirst(logText.count - 200_000)
+            if let newline = logText.firstIndex(of: "\n") {
+                logText = String(logText[logText.index(after: newline)...])
+            }
+            return [.reset(logText)]
+        }
+        return [edit]
+    }
+
+    private func coalesced(_ edits: [LogEdit]) -> [LogEdit] {
+        guard let index = edits.lastIndex(where: { if case .reset = $0 { return true }; return false }) else {
+            return edits
+        }
+        return Array(edits[index...])
+    }
+
+    private func deliver(_ edits: [LogEdit]) {
+        if edits.isEmpty { return }
+        logSink?(edits)
     }
 
     private func configure(_ process: Process, _ launch: ProcessLaunch) {

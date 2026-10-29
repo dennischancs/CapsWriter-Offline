@@ -620,3 +620,161 @@ private func firstCapture(_ pattern: String, in text: String) -> String? {
     }
     return String(text[token])
 }
+
+
+public struct BatchCount: Equatable {
+    public var current: Int
+    public var total: Int
+
+    public init(current: Int = 0, total: Int = 0) {
+        self.current = current
+        self.total = total
+    }
+
+    public var text: String {
+        "当前 \(current) / 总计 \(total)"
+    }
+
+    public var fraction: Double {
+        guard total > 0 else { return 0 }
+        return min(1, max(0, Double(current) / Double(total)))
+    }
+}
+
+public func updateBatchCount(_ line: String, count: inout BatchCount) -> Bool {
+    let text = plainLogLine(line)
+    if let pending = firstInt(#"待转录\s+(\d+)\s*个"#, in: text) {
+        count.total = pending
+        count.current = 0
+        return true
+    }
+    if let pair = firstPair(#"\[(\d+)\s*/\s*(\d+)\]"#, in: text) {
+        count.current = pair.0
+        count.total = pair.1
+        return true
+    }
+    return false
+}
+
+public enum LogEdit: Equatable {
+    case append(String)
+    case replace(kind: String, line: String)
+    case reset(String)
+}
+
+public struct TerminalLog {
+    private var progress = ProgressLog()
+
+    public init() {}
+
+    public mutating func ingest(_ line: String) -> LogEdit? {
+        switch progress.edit(line) {
+        case .drop:
+            return nil
+        case .append:
+            return .append(line)
+        case .replace(let kind):
+            return .replace(kind: kind, line: line)
+        }
+    }
+}
+
+public func logShouldFollow(distanceFromBottom: Double, threshold: Double = 36) -> Bool {
+    distanceFromBottom <= threshold
+}
+
+public func plainLogLine(_ line: String) -> String {
+    var text = line.replacingOccurrences(of: "\r", with: "")
+    text = text.replacingOccurrences(of: "\u{0008}", with: "")
+    let pattern = "\u{001B}\\[[0-9;?]*[ -/]*[@-~]"
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+    let range = NSRange(text.startIndex..., in: text)
+    return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
+}
+
+public func stopPids(groupLeader: Bool, pid: Int32) -> [Int32] {
+    if pid <= 0 { return [] }
+    if groupLeader { return [-pid] }
+    return [pid]
+}
+
+public struct ProcessRow: Equatable {
+    public var pid: Int32
+    public var parent: Int32
+    public var command: String
+
+    public init(pid: Int32, parent: Int32, command: String) {
+        self.pid = pid
+        self.parent = parent
+        self.command = command
+    }
+}
+
+public func parseProcessRows(_ text: String) -> [ProcessRow] {
+    var rows: [ProcessRow] = []
+    for line in text.split(whereSeparator: \.isNewline) {
+        let parts = line.split(maxSplits: 2, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
+        guard parts.count >= 2,
+              let pid = Int32(parts[0]),
+              let parent = Int32(parts[1]) else { continue }
+        let command = parts.count == 3 ? String(parts[2]) : ""
+        rows.append(ProcessRow(pid: pid, parent: parent, command: command))
+    }
+    return rows
+}
+
+public func keepsServerProcess(_ command: String) -> Bool {
+    if command.localizedCaseInsensitiveContains("CapsWriter Server") { return true }
+    let tokens = command.split(maxSplits: 3, omittingEmptySubsequences: true, whereSeparator: { $0 == " " || $0 == "\t" })
+    for token in tokens {
+        let base = (token as NSString).lastPathComponent
+        if base == "start_server" || base == "start_server.exe" || base == "start_server.py" {
+            return true
+        }
+    }
+    return false
+}
+
+/// 批量进程不是组长时，不能对整个组发信号，否则会打到外壳自己。
+/// 只结束它下面的 ffmpeg 等子进程，已经加载的服务端留下。
+public func transcriptionStopPids(root: Int32, rows: [ProcessRow]) -> [Int32] {
+    if root <= 0 { return [] }
+    var children: [Int32: [Int32]] = [:]
+    var commands: [Int32: String] = [:]
+    for row in rows {
+        children[row.parent, default: []].append(row.pid)
+        commands[row.pid] = row.command
+    }
+    var ordered: [Int32] = []
+    var seen = Set<Int32>()
+    func walk(_ pid: Int32) {
+        for child in children[pid] ?? [] {
+            if !seen.insert(child).inserted { continue }
+            if keepsServerProcess(commands[child] ?? "") { continue }
+            walk(child)
+            ordered.append(child)
+        }
+    }
+    walk(root)
+    ordered.append(root)
+    return ordered
+}
+
+private func firstInt(_ pattern: String, in text: String) -> Int? {
+    guard let token = firstCapture(pattern, in: text) else { return nil }
+    return Int(token)
+}
+
+private func firstPair(_ pattern: String, in text: String) -> (Int, Int)? {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let range = NSRange(text.startIndex..., in: text)
+    guard let match = regex.firstMatch(in: text, range: range),
+          match.numberOfRanges > 2,
+          let left = Range(match.range(at: 1), in: text),
+          let right = Range(match.range(at: 2), in: text),
+          let current = Int(text[left]),
+          let total = Int(text[right]) else {
+        return nil
+    }
+    return (current, total)
+}

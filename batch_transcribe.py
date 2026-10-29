@@ -184,11 +184,15 @@ def collect_media(paths: list[Path], recursive: bool, hidden: bool) -> tuple[lis
 
 
 def is_complete(media: Path) -> bool:
-    """同名 .srt 已经是文件就跳过。空文件也算有，不看 .txt 和 .json。"""
+    """写好的同名 .srt 才跳过。空文件、没有时间轴的半截，以及 .partial，都不算做完。"""
+    path = media.with_suffix('.srt')
     try:
-        return media.with_suffix('.srt').is_file()
+        if not path.is_file() or path.stat().st_size == 0:
+            return False
+        text = path.read_text(encoding='utf-8', errors='replace')
     except OSError:
         return False
+    return '-->' in text and bool(text.strip())
 
 
 def outputs_ready(media: Path) -> bool:
@@ -608,6 +612,7 @@ def ensure_server(start: bool, timeout: float) -> subprocess.Popen | None:
         cwd=str(ROOT),
         stdout=log_handle,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     log_handle.close()
     deadline = time.monotonic() + timeout
@@ -932,6 +937,12 @@ async def run_batch(args: argparse.Namespace, stop: StopFlag | None = None) -> R
     session = TranscribeSession()
     try:
         for index, media in enumerate(pending, start=1):
+            if stop is not None:
+                stop.checkpoint()
+            if not args.force and is_complete(media):
+                print(f'  已有字幕，不复写 {media}')
+                report.skipped.append(str(media))
+                continue
             print(f'[{index}/{len(pending)}] {media}')
             try:
                 mode = await transcribe_media(
@@ -1786,7 +1797,7 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             checks = (
                 (self.recursive, '包含子文件夹', '会进入里面的文件夹。关掉后只看这一层。'),
                 (self.split_long, '长文件先切开', '超过 2 小时先切开再识别，最后仍合并成一个字幕、文本和 json。这个 2 小时是固定的。'),
-                (self.force, '已有字幕也重做', '旁边已经有同名 srt 时平常会跳过。勾上后重新转录。'),
+                (self.force, '已有字幕也重做', '旁边已经写好同名 srt 时平常会跳过，不复写。空的或没写完的会再做。勾上后重新转录。'),
                 (self.hidden, '包含隐藏文件', '名字以点开头的文件和文件夹也会处理。'),
                 (self.start_server, '服务端没开就启动', '6016 没在听时，由这里拉起旁边的服务端。窗口不会等模型加载完才出现。'),
                 (self.stop_server, '结束后关掉本次启动的服务端', '只关掉这一次拉起的服务端。原来就已经开着的不会关。'),
@@ -2186,5 +2197,20 @@ def execute_batch(args: argparse.Namespace, stop: StopFlag | None = None) -> int
     return 1 if report.failed_count else 0
 
 
+def lead_process_group(setpgrp=None) -> bool:
+    """本进程当组长。停止时的信号能到 ffmpeg，到不了另开会话的服务端。
+
+    测试会调用 main()，所以只有直接运行这个文件时才入组。
+    """
+    if setpgrp is None:
+        setpgrp = os.setpgrp
+    try:
+        setpgrp()
+    except OSError:
+        return False
+    return True
+
+
 if __name__ == '__main__':
+    lead_process_group()
     sys.exit(main())

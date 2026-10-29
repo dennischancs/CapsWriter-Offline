@@ -1,4 +1,5 @@
 # coding: utf-8
+import os
 import re
 import json
 from pathlib import Path
@@ -87,20 +88,17 @@ class ResultHandler:
         
         # 1. 保存 merge.txt
         if Config.file_save_merge:
-            with open(merge_filename, 'w', encoding='utf-8') as f:
-                f.write(text_accu)
+            _replace_text(merge_filename, text_accu)
             logger.debug(f"保存合并文本: {merge_filename}")
 
         # 2. 保存 txt
         if Config.file_save_txt:
-            with open(txt_filename, 'w', encoding='utf-8') as f:
-                f.write(text_split)
+            _replace_text(txt_filename, text_split)
             logger.debug(f"保存切分文本: {txt_filename}")
 
-        # 3. 保存 json
+        # 3. 保存 json。srt 仍由后面最后替换，中断时旁边还没有跳过标记。
         if Config.file_save_json:
-            with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump({'timestamps': timestamps, 'tokens': tokens}, f, ensure_ascii=False)
+            _replace_text(json_filename, json.dumps({'timestamps': timestamps, 'tokens': tokens}, ensure_ascii=False))
             logger.debug(f"保存 JSON 结果: {json_filename}")
         
         # 4. 生成 srt
@@ -122,3 +120,9 @@ class ResultHandler:
                 logger.warning(f"清理中间 TXT 文件失败: {e}")
                 
         return text_display
+
+
+def _replace_text(path: Path, text: str) -> None:
+    temporary = path.with_suffix(path.suffix + '.partial')
+    temporary.write_text(text, encoding='utf-8')
+    os.replace(temporary, path)

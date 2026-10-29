@@ -369,4 +369,54 @@ final class ShellCoreTests: XCTestCase {
         XCTAssertTrue(shouldRecordLaunchModel(stamped: "  ", portOpen: false))
         XCTAssertFalse(shouldRecordLaunchModel(stamped: "sensevoice", portOpen: false))
     }
+
+
+    func testBatchCountTracksTheFileBeingTranscribed() {
+        var count = BatchCount()
+        XCTAssertFalse(updateBatchCount("服务端已就绪", count: &count))
+        XCTAssertTrue(updateBatchCount("找到 4 个音视频，跳过 1 个，待转录 3 个", count: &count))
+        XCTAssertEqual(count.text, "当前 0 / 总计 3")
+        XCTAssertEqual(count.fraction, 0)
+        XCTAssertTrue(updateBatchCount("[1/3] /tmp/a.wav", count: &count))
+        XCTAssertEqual(count.current, 1)
+        XCTAssertEqual(count.total, 3)
+        XCTAssertEqual(count.fraction, 1.0 / 3.0, accuracy: 0.0001)
+        XCTAssertTrue(updateBatchCount("[3/3] /tmp/c.wav", count: &count))
+        XCTAssertEqual(count.text, "当前 3 / 总计 3")
+        XCTAssertEqual(count.fraction, 1)
+    }
+
+    func testTerminalLogReplacesProgressAndFollowsOnlyNearTheBottom() {
+        var log = TerminalLog()
+        let first = stampLine("    发送进度：0s / 605.77s", now: Date(timeIntervalSince1970: 1_700_000_000))
+        let next = stampLine("    发送进度：60s / 605.77s", now: Date(timeIntervalSince1970: 1_700_000_001))
+        XCTAssertEqual(log.ingest(first), .append(first))
+        XCTAssertEqual(log.ingest(first), nil)
+        XCTAssertEqual(log.ingest(next), .replace(kind: "send", line: next))
+        XCTAssertTrue(logShouldFollow(distanceFromBottom: 0))
+        XCTAssertTrue(logShouldFollow(distanceFromBottom: 36))
+        XCTAssertFalse(logShouldFollow(distanceFromBottom: 37))
+        XCTAssertEqual(stopPids(groupLeader: true, pid: 42), [-42])
+        XCTAssertEqual(stopPids(groupLeader: false, pid: 42), [42])
+        XCTAssertEqual(stopPids(groupLeader: true, pid: 0), [])
+        XCTAssertEqual(plainLogLine("\u{001B}[32m已中断\u{001B}[0m"), "已中断")
+    }
+
+    func testStopSignalsTheBatchTreeWithoutTheLoadedServer() {
+        let rows = parseProcessRows("""
+          10  1 CapsWriter
+          20  10 batch_transcribe /tmp/a.wav
+          21  20 /runtime/start_server
+          22  21 python server-worker
+          23  20 ffmpeg -i /tmp/start_server.wav
+          24  20 /usr/bin/python3 /repo/start_server.py
+        """)
+        XCTAssertEqual(rows.count, 6)
+        XCTAssertEqual(transcriptionStopPids(root: 20, rows: rows), [23, 20])
+        XCTAssertEqual(transcriptionStopPids(root: 0, rows: rows), [])
+        XCTAssertTrue(keepsServerProcess("/runtime/start_server"))
+        XCTAssertTrue(keepsServerProcess("/usr/bin/python3 /repo/start_server.py"))
+        XCTAssertTrue(keepsServerProcess("CapsWriter Server"))
+        XCTAssertFalse(keepsServerProcess("ffmpeg -i /tmp/start_server.wav"))
+    }
 }

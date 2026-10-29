@@ -15,6 +15,7 @@
 
 
 import json
+import os
 from datetime import timedelta
 from pathlib import Path
 from typing import List, Dict, Union
@@ -140,12 +141,18 @@ def get_lines(txt_file: Path) -> List[str]:
         text_lines = f.readlines()
     return text_lines
 
+def _replace_text(path: Path, text: str) -> None:
+    """先写临时文件再替换。中断时原来的字幕还在，不会被截成空文件。"""
+    temporary = path.with_suffix(path.suffix + '.partial')
+    temporary.write_text(text, encoding='utf-8')
+    os.replace(temporary, path)
+
+
 def generate_srt_file(words: list, text_lines: List[str], srt_file: Path):
     """根据提供的 words 和 text_lines 生成 srt 文件"""
     text_lines = [line.rstrip('，。？！,.?!\r\n ') for line in text_lines]
     subtitle_list = lines_match_words(text_lines, words)
-    with open(srt_file, 'w', encoding='utf-8') as f:
-        f.write(srt.compose(subtitle_list))
+    _replace_text(srt_file, srt.compose(subtitle_list))
 
 def one_task(media_file: Path):
     # 配置要打开的文件
