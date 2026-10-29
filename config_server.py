@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 # 版本信息
-__version__ = '2.24.0'
+__version__ = '2.33.0'
 
 # 项目根目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,7 +14,7 @@ class ServerConfig:
     port = '6016'
 
     # 语音模型选择：'qwen_asr', 'fun_asr_nano', 'sensevoice', 'paraformer'
-    model_type = 'sensevoice'
+    model_type = 'qwen_asr'
     # auto：Darwin 上 SenseVoice / Fun / Qwen 走 MLX，Windows 仍走现有引擎。
     # onnx：连 Darwin 也走现有 ONNX / GGUF。mlx：强制 MLX（Paraformer 除外）。
     model_backend = 'auto'

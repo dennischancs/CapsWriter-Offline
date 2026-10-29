@@ -7,7 +7,7 @@
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 # from PyInstaller.building.build_main import Analysis, COLLECT
 from os.path import join, basename, dirname, exists
-from os import walk, makedirs
+from os import getenv, walk, makedirs
 from shutil import copyfile, rmtree
 
 from build_support import (
@@ -376,6 +376,11 @@ if system() == 'Windows':
             print(f'警告：无法创建目录连接符 {dest_folder}，请手动创建或复制文件夹')
 
 # Darwin 复制真实目录。缺的跳过。logs 只建空目录。Windows 仍用上面的 mklink。
-copy_runtime_folders(dest_root)
+# CAPSWRITER_SKIP_MODEL_COPY=1 只用于替换 batch_transcribe，不把模型再复制一份。
+_copy_folders = None
+if getenv('CAPSWRITER_SKIP_MODEL_COPY') == '1':
+    from build_support import DARWIN_COPY_FOLDERS
+    _copy_folders = tuple(name for name in DARWIN_COPY_FOLDERS if name != 'models')
+copy_runtime_folders(dest_root, folders=_copy_folders)
 ensure_darwin_mlx_runtime(dest_root)
 remove_darwin_apps(dest_root)

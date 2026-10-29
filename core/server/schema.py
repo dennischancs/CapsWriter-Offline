@@ -42,6 +42,7 @@ class Task:
     language: str = 'auto'
     samplerate: int = 16000
     command: str = ''           # 特殊命令，如 'gpu_boost' / 'gpu_unboost'
+    seg_duration: float = 60.0  # 这一段在音频文件里的秒数，不是系统时间
 
 
 @dataclass
@@ -85,6 +86,7 @@ class Result:
     timestamps: List[float] = field(default_factory=list)
     
     is_final: bool = False
+    seg_duration: float = 60.0  # 识别按音频文件分段的秒数，不是系统时间
 
 @dataclass
 class RecognitionSession:

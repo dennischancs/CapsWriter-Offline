@@ -78,6 +78,34 @@ final class ShellCoreTests: XCTestCase {
         XCTAssertThrowsError(try writeModelType("port = 1\n", model: "qwen_asr"))
     }
 
+    func testQwenMenuHasTwoSizesAndKeepsTheSavedLine() throws {
+        XCTAssertEqual(modelChoices.map(\.label), [
+            "SenseVoice Small", "Fun-ASR Nano", "Qwen3-ASR 1.7B", "Qwen3-ASR 0.6B", "Paraformer",
+        ])
+        let source = "    model_type = 'qwen_asr'\n    qwen_mlx_variant = 'auto'\n    port = '6016'\n"
+        XCTAssertEqual(readModelChoice(source, memory: qwenLargeMemory), "qwen_asr:1.7b")
+        XCTAssertEqual(readModelChoice(source, memory: qwenLargeMemory - 1), "qwen_asr:0.6b")
+        let small = "    model_type = 'qwen_asr'\n    qwen_mlx_variant = '0.6b'\n"
+        XCTAssertEqual(readModelChoice(small, memory: qwenLargeMemory), "qwen_asr:0.6b")
+        XCTAssertEqual(readModelChoice("    model_type = 'sensevoice'\n", memory: 1), "sensevoice")
+        let args = try batchArguments(
+            target: "/tmp/talk.m4a",
+            recursive: true, splitLong: true, force: false, hidden: false,
+            startServer: true, stopServer: false,
+            model: "qwen_asr:0.6b"
+        )
+        XCTAssertEqual(args, ["/tmp/talk.m4a", "--model", "qwen_asr:0.6b"])
+        let written = try writeModelChoice(source, choice: "qwen_asr:0.6b")
+        XCTAssertEqual(
+            written,
+            "    model_type = 'qwen_asr'\n    qwen_mlx_variant = '0.6b'\n    port = '6016'\n"
+        )
+        let engineOnly = try writeModelChoice(written, choice: "sensevoice")
+        XCTAssertTrue(engineOnly.contains("model_type = 'sensevoice'"))
+        XCTAssertTrue(engineOnly.contains("qwen_mlx_variant = '0.6b'"))
+        XCTAssertThrowsError(try writeModelChoice(source, choice: "qwen_asr:9b"))
+    }
+
     func testCloseChoiceAndFirstDrop() {
         XCTAssertEqual(readCloseChoice(" Tray \n"), .tray)
         XCTAssertNil(readCloseChoice("later"))
@@ -243,21 +271,52 @@ final class ShellCoreTests: XCTestCase {
         XCTAssertTrue(log.lines.last?.hasSuffix("batch finished") == true)
     }
 
-    func testProgressInsideOneSecondKeepsTheFirstLineOnly() {
-        var log = ProgressLog(interval: 30)
+    func testProgressStaysOnOneLineUntilTheNextFile() {
+        var log = ProgressLog(interval: 60)
+        var text = ""
         let start = Date(timeIntervalSince1970: 1_700_000_000)
-        XCTAssertTrue(log.keep("    发送进度：1.00s", at: start))
-        XCTAssertFalse(log.keep("    发送进度：1.20s", at: start.addingTimeInterval(0.2)))
-        XCTAssertFalse(log.keep("    发送进度：1.40s", at: start.addingTimeInterval(0.8)))
-        XCTAssertTrue(log.keep("找到 1 个音视频，跳过 0 个，待转录 1 个", at: start.addingTimeInterval(0.3)))
-        XCTAssertTrue(log.keep("未找到 ffmpeg。文件转录要用它抽出 16kHz 单声道音频", at: start.addingTimeInterval(0.4)))
-        XCTAssertTrue(log.keep("    转录进度：1.00s", at: start.addingTimeInterval(0.5)))
-        XCTAssertFalse(log.keep("    转录进度：1.40s", at: start.addingTimeInterval(0.9)))
-        XCTAssertTrue(log.keep("    转录完成", at: start.addingTimeInterval(1)))
-        XCTAssertTrue(log.keep("[1/2] /tmp/a.wav", at: start.addingTimeInterval(1.1)))
-        XCTAssertTrue(log.keep("  失败: 音频发送失败", at: start.addingTimeInterval(1.2)))
-        XCTAssertTrue(log.keep("[2026-10-28 22:10:44.635]     发送进度：40.00s", at: start.addingTimeInterval(30)))
-        XCTAssertFalse(log.keep("    发送进度：40.20s", at: start.addingTimeInterval(30.2)))
+        func add(_ line: String, _ offset: TimeInterval) {
+            log.apply(&text, stampLine(line, now: start.addingTimeInterval(offset)))
+        }
+        add("    发送进度：0s / 605.77s", 0)
+        add("    发送进度：0s / 605.77s", 0.2)
+        add("    发送进度：60s / 605.77s", 0.4)
+        add("找到 1 个音视频，跳过 0 个，待转录 1 个", 0.5)
+        add("未找到 ffmpeg。文件转录要用它抽出 16kHz 单声道音频", 0.6)
+        add("    发送进度：120s / 605.77s", 0.8)
+        add("    转录进度：60s", 1)
+        add("    转录进度：60s", 1.2)
+        add("    转录进度：120s", 2)
+        add("    转录完成", 2.2)
+        add("[1/2] /tmp/a.wav", 2.3)
+        add("  失败: 音频发送失败", 2.4)
+        add("    处理耗时：38.20s", 3)
+        XCTAssertEqual(text.components(separatedBy: "发送进度").count - 1, 1)
+        XCTAssertTrue(text.contains("发送进度：120s / 605.77s"))
+        XCTAssertFalse(text.contains("发送进度：0s"))
+        XCTAssertFalse(text.contains("发送进度：60s"))
+        XCTAssertEqual(text.components(separatedBy: "转录进度").count - 1, 1)
+        XCTAssertTrue(text.contains("转录进度：120s"))
+        XCTAssertFalse(text.contains("转录进度：60s"))
+        XCTAssertTrue(text.contains("找到 1 个音视频"))
+        XCTAssertTrue(text.contains("未找到 ffmpeg"))
+        XCTAssertTrue(text.contains("转录完成"))
+        XCTAssertTrue(text.contains("[1/2] /tmp/a.wav"))
+        XCTAssertTrue(text.contains("失败: 音频发送失败"))
+        XCTAssertTrue(text.contains("处理耗时：38.20s"))
+        let send = text.range(of: "发送进度：120s")!
+        let named = text.range(of: "找到 1 个音视频")!
+        let heard = text.range(of: "转录进度：120s")!
+        XCTAssertLessThan(send.lowerBound, named.lowerBound)
+        XCTAssertLessThan(named.lowerBound, heard.lowerBound)
+        let finished = stampLine("    发送进度：605.77s / 605.77s", now: start.addingTimeInterval(90))
+        log.apply(&text, finished)
+        XCTAssertTrue(text.contains(finished))
+        XCTAssertFalse(text.contains("发送进度：120s"))
+        add("    发送进度：0s / 30s", 100)
+        XCTAssertEqual(text.components(separatedBy: "发送进度").count - 1, 2)
+        XCTAssertTrue(text.contains("605.77s / 605.77s"))
+        XCTAssertTrue(text.contains("0s / 30s"))
     }
 
     func testBundledRuntimeIsUsedInsteadOfTheSourceTree() {
@@ -281,5 +340,33 @@ final class ShellCoreTests: XCTestCase {
         XCTAssertEqual(source.executable, "/env/python")
         XCTAssertEqual(source.arguments.first, "-c")
         XCTAssertTrue(source.arguments[1].contains("prepare_server(start=True"))
+    }
+
+    func testRunningServerRestartsOnlyWhenTheLoadedModelDiffers() {
+        XCTAssertTrue(serverMustRestart(loaded: "sensevoice", selected: "qwen_asr:1.7b"))
+        XCTAssertTrue(serverMustRestart(loaded: "qwen_asr:1.7b", selected: "qwen_asr:0.6b"))
+        XCTAssertFalse(serverMustRestart(loaded: "sensevoice", selected: "sensevoice"))
+        XCTAssertFalse(serverMustRestart(loaded: "", selected: "qwen_asr:1.7b"))
+        XCTAssertEqual(rememberedServerModel(stamped: "sensevoice\n", launching: "qwen_asr:1.7b"), "sensevoice")
+        XCTAssertEqual(rememberedServerModel(stamped: "  ", launching: "qwen_asr:0.6b"), "qwen_asr:0.6b")
+        XCTAssertEqual(rememberedServerModel(stamped: nil, launching: "sensevoice"), "sensevoice")
+        XCTAssertEqual(portWait(open: false, attempt: 3, limit: 40), .closed)
+        XCTAssertEqual(portWait(open: true, attempt: 0, limit: 2), .keepWaiting)
+        XCTAssertEqual(portWait(open: true, attempt: 1, limit: 2), .stillOpen)
+        XCTAssertEqual(
+            loadedModelAfterProbe(stamped: nil, launching: "qwen_asr:1.7b", portOpen: true),
+            "unknown"
+        )
+        XCTAssertEqual(
+            loadedModelAfterProbe(stamped: "sensevoice", launching: "qwen_asr:1.7b", portOpen: true),
+            "sensevoice"
+        )
+        XCTAssertEqual(
+            loadedModelAfterProbe(stamped: nil, launching: "sensevoice", portOpen: false),
+            "sensevoice"
+        )
+        XCTAssertFalse(shouldRecordLaunchModel(stamped: nil, portOpen: true))
+        XCTAssertTrue(shouldRecordLaunchModel(stamped: "  ", portOpen: false))
+        XCTAssertFalse(shouldRecordLaunchModel(stamped: "sensevoice", portOpen: false))
     }
 }

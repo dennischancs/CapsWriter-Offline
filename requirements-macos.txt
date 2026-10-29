@@ -21,7 +21,6 @@ typer
 colorama
 markdown
 markdown-it-py
-tkhtmlview
 pynput
 pyclip
 sounddevice
@@ -35,4 +34,3 @@ pydub
 nagisa
 soynlp
 psutil
-tkinterdnd2

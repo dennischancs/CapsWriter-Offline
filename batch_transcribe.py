@@ -41,7 +41,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.tools.progress_log import ProgressGate
+from core.tools.progress_log import ProgressGate, apply_progress_line
 
 def install_root(file_path=None, frozen=None, executable=None) -> Path:
     """源码在脚本旁边。打包后可执行文件的目录才是配置、core 和服务端所在处。"""
@@ -92,10 +92,21 @@ LOG_RANK = {name: index for index, name in enumerate(LOG_LEVELS)}
 MODEL_CHOICES = (
     ('sensevoice', 'SenseVoice Small'),
     ('fun_asr_nano', 'Fun-ASR Nano'),
-    ('qwen_asr', 'Qwen3-ASR'),
+    ('qwen_asr:1.7b', 'Qwen3-ASR 1.7B'),
+    ('qwen_asr:0.6b', 'Qwen3-ASR 0.6B'),
     ('paraformer', 'Paraformer'),
 )
-MODEL_IDS = tuple(item[0] for item in MODEL_CHOICES)
+MENU_IDS = tuple(item[0] for item in MODEL_CHOICES)
+MODEL_IDS = ('sensevoice', 'fun_asr_nano', 'qwen_asr', 'paraformer')
+MODEL_ARGUMENTS = (
+    'sensevoice', 'fun_asr_nano', 'qwen_asr',
+    'qwen_asr:1.7b', 'qwen_asr:0.6b', 'paraformer',
+)
+_MODEL_LABELS = {key: label for key, label in MODEL_CHOICES}
+_QWEN_VARIANTS = ('1.7b', '0.6b')
+_VARIANT_RE = re.compile(
+    r"""(?m)^(?P<indent>[ \t]*qwen_mlx_variant\s*=\s*)(?P<quote>['\"])(?P<value>[A-Za-z0-9_.]+)(?P=quote)"""
+)
 PART_MARK = '.capswriter-part-'
 CLOSE_TRAY = 'tray'
 CLOSE_QUIT = 'quit'
@@ -434,15 +445,115 @@ class LogTail:
         return text
 
 
-def apply_model_choice(model, config_path=None, restart=None):
-    """把所选模型写入配置。和当前不一样时，重启服务端后才会加载。"""
-    path = ROOT / 'config_server.py' if config_path is None else Path(config_path)
-    current = current_model_type(path)
-    if model == current:
-        print(f'模型: {model}')
+def loaded_model_path(root=None):
+    """这次拉起的服务端实际加载的菜单项。旧进程还在时不能只看配置文件。"""
+    return Path(root or ROOT) / 'logs' / 'loaded_model.txt'
+
+
+def read_loaded_model(path=None):
+    target = loaded_model_path() if path is None else Path(path)
+    try:
+        return target.read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+
+
+def record_loaded_model(started, config_text, path):
+    """只有这次真的拉起了进程才记下模型。端口上原来就有的，不覆盖。"""
+    if started is None:
         return False
-    save_model_type(path, model)
-    print(f'模型从 {current} 换成 {model}。正在重启服务端。')
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(read_model_choice(config_text) + '\n', encoding='utf-8')
+    return True
+
+
+def parse_process_start(text):
+    """ps -o lstart= 的本地时间。解析不了就当不知道。"""
+    raw = ' '.join(str(text or '').split())
+    if not raw:
+        return None
+    try:
+        moment = datetime.strptime(raw, '%a %b %d %H:%M:%S %Y')
+    except ValueError:
+        return None
+    return moment.timestamp()
+
+
+def process_started_at(pid, runner=None):
+    if int(pid) <= 1:
+        return None
+    run = subprocess.run if runner is None else runner
+    try:
+        result = run(
+            ['ps', '-p', str(int(pid)), '-o', 'lstart='],
+            capture_output=True, text=True, check=False,
+            env={**os.environ, 'LC_ALL': 'C'},
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return parse_process_start(getattr(result, 'stdout', '') or '')
+
+
+def listening_server_started_at(port, listener_lookup=None, started_lookup=None):
+    """端口上最早那个监听进程的启动时间。没有就返回 None。"""
+    listeners = listener_pids(port) if listener_lookup is None else listener_lookup(port)
+    lookup = process_started_at if started_lookup is None else started_lookup
+    times = []
+    for pid in listeners or []:
+        moment = lookup(pid)
+        if moment is not None:
+            times.append(moment)
+    if not times:
+        return None
+    return min(times)
+
+
+def config_is_newer_than_server(config_path, started_at, slack=1.0):
+    """配置文件比服务端进程新一秒以上，说明进程读到的还是旧配置。"""
+    if started_at is None:
+        return False
+    try:
+        mtime = Path(config_path).stat().st_mtime
+    except OSError:
+        return False
+    return mtime > float(started_at) + float(slack)
+
+
+def apply_model_choice(
+    model, config_path=None, restart=None, memory=None,
+    server_up=False, loaded_model=None, config_stale=False,
+):
+    """写入配置。引擎、规格变了，进程里还是旧模型，或配置比进程新，都要重启。"""
+    path = ROOT / 'config_server.py' if config_path is None else Path(config_path)
+    text = path.read_text(encoding='utf-8')
+    engine, variant = split_model_choice(model)
+    current_engine = read_model_type(text)
+    current_variant = read_qwen_variant(text)
+    same_engine = engine == current_engine
+    if variant is None or variant == current_variant:
+        same_variant = True
+    elif current_variant == 'auto' and effective_qwen_variant('auto', memory) == variant:
+        same_variant = same_engine
+    else:
+        same_variant = False
+    requested = menu_id_for(engine, variant if variant else current_variant, memory)
+    label = model_label(requested)
+    running = str(loaded_model or '').strip()
+    loaded_differs = bool(server_up) and bool(running) and running != requested
+    stale = bool(server_up) and bool(config_stale)
+    if same_engine and same_variant and not loaded_differs and not stale:
+        print(f'模型: {label}')
+        return False
+    if not (same_engine and same_variant):
+        path.write_text(write_model_choice(text, model), encoding='utf-8')
+        current_label = model_label(menu_id_for(current_engine, current_variant, memory))
+        print(f'模型从 {current_label} 换成 {label}。正在重启服务端。')
+    elif loaded_differs:
+        print(f'服务端仍是 {model_label(running)}，正在换成 {label}。')
+    else:
+        print(f'配置比正在运行的服务端新，正在重启后再用 {label}。')
     if restart is not None:
         restart()
     return True
@@ -503,6 +614,11 @@ def ensure_server(start: bool, timeout: float) -> subprocess.Popen | None:
     while time.monotonic() < deadline:
         if server_is_up(host, port):
             print(f'服务端已就绪 {host}:{port} (pid {process.pid})')
+            try:
+                config_text = (ROOT / 'config_server.py').read_text(encoding='utf-8')
+                record_loaded_model(process, config_text, loaded_model_path())
+            except OSError:
+                pass
             return process
         if process.poll() is not None:
             tail = _log_tail(log_path)
@@ -802,7 +918,16 @@ async def run_batch(args: argparse.Namespace, stop: StopFlag | None = None) -> R
 
     chosen = getattr(args, 'model', None)
     if chosen:
-        apply_model_choice(chosen, restart=restart_running_server)
+        host, port = server_endpoint()
+        server_up = server_is_up(host, port, timeout=0.4)
+        started = listening_server_started_at(port) if server_up else None
+        apply_model_choice(
+            chosen,
+            restart=restart_running_server,
+            server_up=server_up,
+            loaded_model=read_loaded_model(),
+            config_stale=config_is_newer_than_server(ROOT / 'config_server.py', started),
+        )
     server = ensure_server(start=not args.no_start_server, timeout=args.server_timeout)
     session = TranscribeSession()
     try:
@@ -860,9 +985,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('paths', nargs='+', type=Path, help='文件或文件夹，可以传多个')
     parser.add_argument(
         '--model',
-        choices=MODEL_IDS,
+        choices=MODEL_ARGUMENTS,
         default=None,
-        help='开始前写入 config_server.py。和当前不一样时先重启服务端',
+        help='开始前写入 config_server.py。Qwen3-ASR 用 qwen_asr:1.7b 或 qwen_asr:0.6b。配置或正在运行的模型不一样时先重启服务端',
     )
     parser.add_argument('--no-recursive', action='store_true', help='只看文件夹的第一层')
     parser.add_argument('--force', action='store_true', help='即使已有同名 srt 也重做')
@@ -895,6 +1020,9 @@ def main(argv: list[str] | None = None) -> int:
         stop_background_servers(ROOT, server_endpoint()[1])
         return 0
     if not incoming:
+        if sys.platform == 'darwin':
+            print('macOS 批量窗口在 CapsWriter.app 里，不打开 Tk。请传入文件或文件夹。', file=sys.stderr)
+            return 2
         return run_gui()
     args = build_parser().parse_args(incoming)
     args.segment_hours = None
@@ -933,6 +1061,96 @@ def save_model_type(path, model, choices=MODEL_IDS):
     file = Path(path)
     text = file.read_text(encoding='utf-8')
     file.write_text(write_model_type(text, model, choices), encoding='utf-8')
+
+
+def read_qwen_variant(text):
+    """读 Qwen 规格。没有这一行时按 auto。"""
+    match = _VARIANT_RE.search(text or '')
+    found = match.group('value').lower() if match else 'auto'
+    if found in ('1.7b', '1.7'):
+        return '1.7b'
+    if found in ('0.6b', '0.6'):
+        return '0.6b'
+    return 'auto'
+
+
+def write_qwen_variant(text, variant):
+    """只替换 qwen_mlx_variant 这一行。"""
+    if variant not in _QWEN_VARIANTS:
+        raise ValueError(f'不支持的 Qwen 规格: {variant}')
+
+    def replace(match):
+        return match.group('indent') + match.group('quote') + variant + match.group('quote')
+
+    updated, count = _VARIANT_RE.subn(replace, text or '', count=1)
+    if count != 1:
+        raise ValueError('config_server.py 里没有 qwen_mlx_variant')
+    return updated
+
+
+def effective_qwen_variant(preference='auto', memory=None):
+    """auto 按统一内存选规格，规则和加载模型时相同。"""
+    from core.server.engines.mlx.variant import MEMORY_16GB, select_qwen_variant
+
+    if memory is None:
+        try:
+            import psutil
+            memory = int(psutil.virtual_memory().total)
+        except Exception:
+            memory = MEMORY_16GB
+    variant, _repo, _dirname = select_qwen_variant(preference, memory)
+    return variant
+
+
+def split_model_choice(choice):
+    """菜单值可以是 qwen_asr:1.7b。旧的 qwen_asr 不改规格。"""
+    text = str(choice or '').strip()
+    if text in MENU_IDS and ':' in text:
+        engine, variant = text.split(':', 1)
+        if engine not in MODEL_IDS or variant not in _QWEN_VARIANTS:
+            raise ValueError(f'不支持的模型: {choice}')
+        return engine, variant
+    if text in MODEL_IDS:
+        return text, None
+    raise ValueError(f'不支持的模型: {choice}')
+
+
+def menu_id_for(engine, variant=None, memory=None):
+    if engine == 'qwen_asr':
+        size = variant if variant in _QWEN_VARIANTS else effective_qwen_variant(variant or 'auto', memory)
+        return f'qwen_asr:{size}'
+    if engine in MODEL_IDS:
+        return engine
+    return MENU_IDS[0]
+
+
+def model_label(choice):
+    return _MODEL_LABELS.get(choice, choice)
+
+
+def read_model_choice(text, memory=None):
+    return menu_id_for(read_model_type(text), read_qwen_variant(text), memory)
+
+
+def write_model_choice(text, choice):
+    """Qwen 的两个菜单项同时写 model_type 和 qwen_mlx_variant。其它模型只写引擎。"""
+    engine, variant = split_model_choice(choice)
+    updated = write_model_type(text, engine)
+    if variant:
+        updated = write_qwen_variant(updated, variant)
+    return updated
+
+
+def normalize_menu_model(model, config_text='', memory=None):
+    if model in MENU_IDS:
+        return model
+    if model in MODEL_IDS and model != 'qwen_asr':
+        return model
+    if model == 'qwen_asr':
+        return 'qwen_asr:1.7b'
+    if config_text:
+        return read_model_choice(config_text, memory)
+    return MENU_IDS[0]
 
 
 def stamp_line(line, now=None):
@@ -1535,15 +1753,22 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             tool_row = ttk.Frame(self.master)
             tool_row.pack(fill='x', padx=12, pady=(0, 4))
             ttk.Label(tool_row, text='模型').pack(side='left')
-            selected = model if model in MODEL_IDS else current_model_type(ROOT / 'config_server.py')
+            if model in MENU_IDS or model in MODEL_IDS:
+                config_text = ''
+            else:
+                try:
+                    config_text = (ROOT / 'config_server.py').read_text(encoding='utf-8')
+                except OSError:
+                    config_text = ''
+            selected = normalize_menu_model(model, config_text)
             self.model = tk.StringVar(value=selected)
             model_box = ttk.Combobox(
-                tool_row, textvariable=self.model, state='readonly', width=18,
+                tool_row, textvariable=self.model, state='readonly', width=22,
                 values=[label for _key, label in MODEL_CHOICES],
             )
             labels = {key: label for key, label in MODEL_CHOICES}
             keys = {label: key for key, label in MODEL_CHOICES}
-            model_box.set(labels.get(self.model.get(), labels[MODEL_IDS[0]]))
+            model_box.set(labels.get(self.model.get(), labels[MENU_IDS[0]]))
             self._model_keys = keys
             self._model_box = model_box
             model_box.pack(side='left', padx=(6, 16))
@@ -1555,8 +1780,8 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             )
             level_box.pack(side='left', padx=6)
             if tips:
-                self._tips.append(_HoverTip(model_box, '下次开始前写入配置并重启服务端。正在转录时不能换。'))
-                self._tips.append(_HoverTip(level_box, '窗口里显示到哪一级。DEBUG 最详细，ERROR 只留错误。发送进度和转录进度至少隔 30 秒一行。'))
+                self._tips.append(_HoverTip(model_box, 'Qwen3-ASR 可选 1.7B 或 0.6B。下次开始前写入配置并重启服务端。正在转录时不能换。'))
+                self._tips.append(_HoverTip(level_box, '窗口里显示到哪一级。DEBUG 最详细，ERROR 只留错误。发送进度和转录进度各自只占一行，数字从 0、60、120 改到这段音频结束。'))
 
             checks = (
                 (self.recursive, '包含子文件夹', '会进入里面的文件夹。关掉后只看这一层。'),
@@ -1707,18 +1932,20 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
                 self.target.set(choice)
 
         def _append(self, text):
-            visible = []
-            for line in str(text).splitlines(keepends=True):
-                body = line.rstrip('\r\n')
-                if not log_line_visible(body, self.log_level.get()):
+            current = self.log.get('1.0', 'end-1c')
+            updated = current
+            for line in str(text).splitlines():
+                body = line.rstrip('\r')
+                if not body or not log_line_visible(body, self.log_level.get()):
                     continue
-                if not self._progress.allow(body):
-                    continue
-                visible.append(line)
-            if not visible:
+                updated = apply_progress_line(updated, body, self._progress)
+            if updated == current:
                 return
+            if not updated.endswith('\n'):
+                updated += '\n'
             self.log.configure(state='normal')
-            self.log.insert('end', ''.join(visible))
+            self.log.delete('1.0', 'end')
+            self.log.insert('1.0', updated)
             self.log.see('end')
             self.log.configure(state='disabled')
 
@@ -1746,7 +1973,7 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
                 'hidden': self.hidden.get(),
                 'start_server': self.start_server.get(),
                 'stop_server': self.stop_server.get(),
-                'model': self._model_keys.get(shown, MODEL_IDS[0]),
+                'model': self._model_keys.get(shown, MENU_IDS[0]),
                 'log_level': self.log_level.get(),
             }
 

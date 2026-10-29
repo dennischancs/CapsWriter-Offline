@@ -3,11 +3,13 @@ import Foundation
 public let modelChoices: [(id: String, label: String)] = [
     ("sensevoice", "SenseVoice Small"),
     ("fun_asr_nano", "Fun-ASR Nano"),
-    ("qwen_asr", "Qwen3-ASR"),
+    ("qwen_asr:1.7b", "Qwen3-ASR 1.7B"),
+    ("qwen_asr:0.6b", "Qwen3-ASR 0.6B"),
     ("paraformer", "Paraformer"),
 ]
 
 public let modelIDs = ["sensevoice", "fun_asr_nano", "qwen_asr", "paraformer"]
+public let qwenLargeMemory: UInt64 = 16 * 1024 * 1024 * 1024
 public let logLevels = ["DEBUG", "INFO", "WARNING", "ERROR"]
 public let homebrewPython = "/opt/homebrew/Caskroom/miniforge/base/envs/capswriter/bin/python3"
 public let launchToolDirectories = ["/opt/homebrew/bin", "/usr/local/bin"]
@@ -92,7 +94,7 @@ public func batchArguments(
     if trimmed.isEmpty {
         throw ShellError.emptyTarget
     }
-    guard modelIDs.contains(model) else {
+    guard acceptsModelArgument(model) else {
         throw ShellError.unsupportedModel(model)
     }
     var args = [trimmed, "--model", model]
@@ -121,7 +123,7 @@ public func pythonEnvironment(
     return copy
 }
 
-public let progressInterval: TimeInterval = 30
+public let progressInterval: TimeInterval = 60
 
 public func progressKind(_ line: String) -> String? {
     if line.contains("发送进度") { return "send" }
@@ -129,23 +131,83 @@ public func progressKind(_ line: String) -> String? {
     return nil
 }
 
+public func progressNumerator(_ line: String) -> Double? {
+    for marker in ["发送进度：", "转录进度："] {
+        guard let range = line.range(of: marker) else { continue }
+        var digits = ""
+        var sawDot = false
+        for character in line[range.upperBound...] {
+            if character.isNumber {
+                digits.append(character)
+            } else if character == "." && !sawDot && !digits.isEmpty {
+                sawDot = true
+                digits.append(character)
+            } else if digits.isEmpty && character == " " {
+                continue
+            } else {
+                break
+            }
+        }
+        return Double(digits)
+    }
+    return nil
+}
+
+public enum ProgressEdit: Equatable {
+    case drop
+    case append
+    case replace(String)
+}
+
 public struct ProgressLog {
     public let interval: TimeInterval
-    private var last: [String: Date] = [:]
+    private var last: [String: Double] = [:]
 
     public init(interval: TimeInterval = progressInterval) {
         self.interval = interval
     }
 
-    /// 同一种进度第一行马上留下。30 秒内的后续进度丢掉。完成、失败和文件名始终留下。
-    public mutating func keep(_ line: String, at now: Date) -> Bool {
-        guard let kind = progressKind(line) else { return true }
-        if let previous = last[kind], now.timeIntervalSince(previous) < interval {
-            return false
+    /// 同一种进度原地改。分子变小是下一个文件，才另起一行。完成、失败和文件名始终另起一行。
+    public mutating func edit(_ line: String) -> ProgressEdit {
+        guard let kind = progressKind(line), let value = progressNumerator(line) else { return .append }
+        if let previous = last[kind] {
+            if abs(previous - value) < 0.001 { return .drop }
+            if value + 0.001 < previous {
+                last[kind] = value
+                return .append
+            }
+            last[kind] = value
+            return .replace(kind)
         }
-        last[kind] = now
-        return true
+        last[kind] = value
+        return .append
     }
+
+    public mutating func apply(_ log: inout String, _ line: String) {
+        switch edit(line) {
+        case .drop:
+            return
+        case .append:
+            if !log.isEmpty && !log.hasSuffix("\n") { log += "\n" }
+            log += line + "\n"
+        case .replace(let kind):
+            log = replacingLastProgress(log, kind: kind, with: line)
+        }
+    }
+}
+
+public func replacingLastProgress(_ log: String, kind: String, with line: String) -> String {
+    let marker = kind == "send" ? "发送进度" : "转录进度"
+    let body = log.hasSuffix("\n") ? String(log.dropLast()) : log
+    var lines = body.isEmpty
+        ? [String]()
+        : body.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    if let index = lines.lastIndex(where: { $0.contains(marker) }) {
+        lines[index] = line
+    } else {
+        lines.append(line)
+    }
+    return lines.joined(separator: "\n") + "\n"
 }
 
 public struct ProcessLaunch: Equatable {
@@ -281,12 +343,46 @@ public func resolvePython(environment: String?, isExecutable: (String) -> Bool) 
     return "python3"
 }
 
+public func acceptsModelArgument(_ model: String) -> Bool {
+    if modelChoices.contains(where: { $0.id == model }) { return true }
+    return modelIDs.contains(model)
+}
+
 public func readModelType(_ text: String) -> String {
     guard let found = firstCapture("model_type\\s*=\\s*['\\\"]([A-Za-z0-9_]+)['\\\"]", in: text),
           modelIDs.contains(found) else {
         return modelIDs[0]
     }
     return found
+}
+
+public func readQwenVariant(_ text: String) -> String {
+    guard let found = firstCapture(
+        "(?m)^[ \t]*qwen_mlx_variant\\s*=\\s*['\"]([A-Za-z0-9_.]+)['\"]",
+        in: text
+    ) else {
+        return "auto"
+    }
+    switch found.lowercased() {
+    case "1.7b", "1.7": return "1.7b"
+    case "0.6b", "0.6": return "0.6b"
+    default: return "auto"
+    }
+}
+
+/// auto 不单列。统一内存达到 16GB 时显示 1.7B，否则显示 0.6B。
+public func readModelChoice(_ text: String, memory: UInt64) -> String {
+    let engine = readModelType(text)
+    guard engine == "qwen_asr" else { return engine }
+    let variant = readQwenVariant(text)
+    let size: String
+    switch variant {
+    case "1.7b", "0.6b":
+        size = variant
+    default:
+        size = memory >= qwenLargeMemory ? "1.7b" : "0.6b"
+    }
+    return "qwen_asr:\(size)"
 }
 
 public func writeModelType(_ text: String, model: String) throws -> String {
@@ -300,6 +396,36 @@ public func writeModelType(_ text: String, model: String) throws -> String {
         throw ShellError.missingModelLine
     }
     return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "$1\(model)$2")
+}
+
+public func writeQwenVariant(_ text: String, variant: String) throws -> String {
+    guard variant == "1.7b" || variant == "0.6b" else {
+        throw ShellError.unsupportedModel(variant)
+    }
+    let pattern = #"(?m)^([ \t]*qwen_mlx_variant\s*=\s*['"])[A-Za-z0-9_.]+(['"])"#
+    let regex = try NSRegularExpression(pattern: pattern)
+    let range = NSRange(text.startIndex..., in: text)
+    if regex.numberOfMatches(in: text, range: range) != 1 {
+        throw ShellError.missingModelLine
+    }
+    return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "$1\(variant)$2")
+}
+
+public func writeModelChoice(_ text: String, choice: String) throws -> String {
+    let parts = choice.split(separator: ":", maxSplits: 1).map(String.init)
+    let engine = parts.first ?? ""
+    guard modelIDs.contains(engine) else {
+        throw ShellError.unsupportedModel(choice)
+    }
+    var updated = try writeModelType(text, model: engine)
+    if parts.count == 2 {
+        let variant = parts[1]
+        guard engine == "qwen_asr", variant == "1.7b" || variant == "0.6b" else {
+            throw ShellError.unsupportedModel(choice)
+        }
+        updated = try writeQwenVariant(updated, variant: variant)
+    }
+    return updated
 }
 
 public func stampLine(_ line: String, now: Date) -> String {
@@ -423,6 +549,44 @@ public func audioMessageJSON(
         return "{}"
     }
     return text
+}
+
+public enum PortWait: Equatable {
+    case closed
+    case keepWaiting
+    case stillOpen
+}
+
+/// 已经记下的模型和这次选择不同，才停掉旧服务端。没记过，或没换，就不重启。
+public func serverMustRestart(loaded: String, selected: String) -> Bool {
+    !loaded.isEmpty && loaded != selected
+}
+
+/// 文件里是进程实际加载的模型。没有这份记录时，才用这次准备要拉起的菜单项。
+public func rememberedServerModel(stamped: String?, launching: String) -> String {
+    let saved = stamped?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if !saved.isEmpty { return saved }
+    return launching
+}
+
+/// 没有记录、端口上却已经有服务端时，不能把菜单上的模型当成进程里的模型。
+public func loadedModelAfterProbe(stamped: String?, launching: String, portOpen: Bool) -> String {
+    let missing = stamped?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+    if missing && portOpen { return "unknown" }
+    return rememberedServerModel(stamped: stamped, launching: launching)
+}
+
+/// 只有端口本来是空的，才把这次准备要拉起的模型记下来。
+public func shouldRecordLaunchModel(stamped: String?, portOpen: Bool) -> Bool {
+    let missing = stamped?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+    return missing && !portOpen
+}
+
+/// attempt 从 0 数。端口关了就停。还开着并且没到次数，再等一次。到了仍开着就放弃。
+public func portWait(open: Bool, attempt: Int, limit: Int) -> PortWait {
+    if !open { return .closed }
+    if attempt + 1 >= limit { return .stillOpen }
+    return .keepWaiting
 }
 
 public func recognitionText(from json: String) -> (taskID: String, isFinal: Bool, text: String)? {

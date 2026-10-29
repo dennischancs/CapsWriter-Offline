@@ -357,6 +357,32 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 
 2026-10-28 版本 2.24.0。界面日志里的发送进度和转录进度至少隔 30 秒一行，第一行马上留下，完成、失败和文件名不挡。`./build-macos.sh` 在 PyInstaller 之后编译 Swift，把收集目录移进 `dist/CapsWriter.app/Contents/Resources/runtime`。模型用复制，不用绝对路径符号链接；清理前先解开链接，避免删到仓库里的权重。`./clean-macos.sh` 仍只删 `build` 和 `dist`。`swift test --package-path macos/CapsWriterShell`，17 项通过。capswriter 的 Python 跑 `tests.test_progress_log tests.test_batch_transcribe tests.test_build_support tests.test_macos_build`，66 项通过。这次没有重跑 PyInstaller。
 
+2026-10-28 版本 2.25.0。发送进度和转录进度的日志写明分段是音频文件里的秒，不是系统时间。默认仍是 60 秒。界面收日志的 30 秒还是系统时间。capswriter 的 Python 跑 `tests.test_progress_log tests.test_build_support`，12 项通过。这次没有重跑 PyInstaller，也没有编译 Swift。
+
+2026-10-29 版本 2.26.0。外壳窗口用三个标签。首页仍是批量转换。client 和 server 先写启动时能看到的地址、快捷键和模型，再列出两个配置文件里的全部赋值。默认值照文件填，默认关着的不替用户打开。推荐值控件是灰的，双击后问「这是推荐值。确定要修改吗？」，确认才解锁这一项，只记在这次窗口里。悬停说明挂在标签上。写入仍是改 py 文件，下次启动才生效。配置读完之前不先画出一排关着的勾选。capswriter 的 Python 跑 `tests.test_config_form tests.test_build_support`，18 项通过。`swift build --package-path macos/CapsWriterShell` 通过。`swift test --package-path macos/CapsWriterShell`，17 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+2026-10-29 版本 2.27.0。发送进度和转录进度去掉括号里的说明。分子只在读到或转完音频的 0、60、120 秒时更新，最后一行走到真实时长，例如 605.77 秒不会停在 600。同一数字不重复。完成、失败和文件名仍马上留下。capswriter 的 Python 跑 `tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，50 项通过。`swift build --package-path macos/CapsWriterShell` 通过。`swift test --package-path macos/CapsWriterShell`，17 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+2026-10-29 版本 2.28.0。批量窗口的模型菜单把 Qwen3-ASR 分成 1.7B 和 0.6B。选中后同时写 `model_type` 和 `qwen_mlx_variant`。`auto` 仍可用，但不出现在菜单里；窗口按统一内存显示 1.7B 或 0.6B，和文件里将要加载的规格一样时不重启。命令行 `--model qwen_asr` 仍只改引擎，不改规格。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support`，46 项通过。`swift test --package-path macos/CapsWriterShell`，18 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+2026-10-29 版本 2.29.0。`./build-macos.sh` 一次打出 `dist/CapsWriter.app`，Swift 界面、服务端和复制的模型都在包里。成功后清掉 `build`、包内 `.build` 和 `/tmp/cw-swift`。`./clean-macos.sh` 再把 `dist` 一起删掉，仓库里的 `models` 不动。程序还在跑时两件事都不做。capswriter 的 Python 跑 `tests.test_macos_build tests.test_build_support`，31 项通过。接着跑了 `./build-macos.sh`，得到 7.5GB 的 app，短版本 2.29.0，三个 Mach-O 都是 arm64，包内模型不是符号链接。
+
+2026-10-29 版本 2.30.0。批量转换一换模型就写入 `config_server.py`，server 标签重读后摘要和表单换成同一个模型和 Qwen 规格。client 没有模型项，不跟着变。和 2.31.0 一起验证：capswriter 的 Python 跑 `tests.test_config_form tests.test_batch_transcribe tests.test_build_support`，57 项通过。`swift test --package-path macos/CapsWriterShell`，18 项通过。
+
+2026-10-29 版本 2.31.0。server 标签「现在这样跑」和批量菜单用同一套算法。`auto` 按内存展开成 1.7b 或 0.6b，选了具体规格或换成别的引擎后摘要跟着变。client 没有模型项，不跟着变。表单仍显示文件原文。capswriter 的 Python 跑 `tests.test_config_form tests.test_batch_transcribe tests.test_build_support`，57 项通过。`swift test --package-path macos/CapsWriterShell`，18 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+2026-10-29 版本 2.32.0。macOS 依赖去掉 `tkhtmlview` 和 `tkinterdnd2`，打包也不再收集后者。不带参数的 `batch_transcribe.py` 在 Darwin 上不打开 Tk。Windows 的 Tk 提示和批量窗口还在。capswriter 的 Python 跑 `tests.test_batch_transcribe tests.test_build_support tests.test_macos_port`，91 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+2026-10-29 版本 2.33.0。`./build-macos.sh` 在 app 旁边打出 `dist/CapsWriter-2.33.0.dmg`。镜像里是 `CapsWriter.app` 和名为 Applications、指向 `/Applications` 的链接。只打客户端不打这个盘。清理仍删整个 `dist`。capswriter 的 Python 跑 `tests.test_macos_build tests.test_build_support`，34 项通过。没有重跑 PyInstaller。用现有的 `dist/CapsWriter.app` 打出 6.3GB 的 `dist/CapsWriter-2.33.0.dmg`。只读挂载后看到 `CapsWriter.app` 和 `Applications -> /Applications`，随后卸掉。
+
+2026-10-29 版本 2.32.3。服务端已经加载过模型时，批量窗口再换模型不会只改 `config_server.py`。下一次开始先停掉还在听的旧进程，端口关掉后再拉起新模型。Qwen 1.7B 和 0.6B 也按这个区分。配置已经写成新模型、但进程里仍是旧模型时同样重启。窗口先写入配置时，配置文件比正在运行的进程新，也会重启。端口关不掉就不开始。capswriter 的 Python 跑 `tests.test_config_form tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，68 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，19 项通过。没有整包重打，只换了 app 里的 Swift 界面和重新打包的 `batch_transcribe`。模型副本没动。
+
+2026-10-29 版本 2.32.2。界面日志里的发送进度和转录进度不再每档另起一行。同一种进度原地改到这段音频的结尾，时间戳跟着改成最后一次的时间。处理耗时仍另起一行。下一份文件的进度变小，才再起一行。capswriter 的 Python 跑 `tests.test_config_form tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，66 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，18 项通过。这次没有重跑 PyInstaller，只替换 app 里的 Swift 界面。
+
+2026-10-29 版本 2.32.1。client 和 server 标签打开配置时不再导入 `batch_transcribe`。打包后的那个文件是可执行文件，原来两个标签都是 `No module named 'batch_transcribe'`。`auto` 仍按内存展开。发送进度不再把 0.04、0.06、1.09 这样的小数全写进日志，分子按音频的 0、60、120 走，605.77 秒的文件最后一行是 605.77。转录进度改用同一套文字。capswriter 的 Python 跑 `tests.test_config_form tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，65 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，18 项通过。接着跑了 `./build-macos.sh`，得到短版本 2.32.1 的 `dist/CapsWriter.app`。包内配置摘要能读出来，打开后 client 和 server 都是配置页。
+
+2026-10-29 版本 2.29.1。`file_transcriber.py` 在打包时是空的，批量转录报 `cannot import name 'FileTranscriber'`。源文件从上次提交恢复，app 里的副本换成同一份。没有重跑 PyInstaller。
+
 2026-10-27 版本 2.10.1。`./build-macos.sh` 会跳过没有 PyInstaller 的系统 `python3`，依次看 `CAPSWRITER_PYTHON`、仓库 `.venv`、`pyinstaller` 旁边的 Python、`python3.14` / `3.13` / `3.12`，以及 `/opt/homebrew/bin/python3.14`。失败时列出试过的路径。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，97 项通过。选中 `/tmp/capswriter-macos-test/bin/python`。这次没有重跑 PyInstaller。
 
 2026-10-27 版本 2.11.0。`build.spec` 增加 `batch_transcribe`，完整收集目录和 `start_server` 放在一起。只打客户端的 spec 不含它。打包后的程序从所在目录找 `start_server`，源码仍走 `python start_server.py`。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，103 项通过。PyInstaller 6.22.3 打出 arm64 的 `batch_transcribe`，`--help` 和空目录 `--dry-run` 退出码 0。当时 `start_server` 还在听 6016，没有重写它，只把这个新文件放进 `dist/CapsWriter-Offline`。

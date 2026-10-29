@@ -1,4 +1,5 @@
 import Combine
+import Darwin
 import Foundation
 import CapsWriterCore
 
@@ -31,6 +32,7 @@ final class BatchModel: ObservableObject {
     let python: String
     let bundled: Bool
     var note: (String) -> Void = { _ in }
+    var onConfigurationChanged: () -> Void = {}
 
     private var partial = ""
     private var progressLog = ProgressLog()
@@ -38,6 +40,9 @@ final class BatchModel: ObservableObject {
     private var batchProcess: Process?
     private var stoppedByUser = false
     private var prepareOutput = ""
+    private var loadedServerModel = ""
+    private var waitingForModelSwitch = false
+    private let portWaitLimit = 40
 
     init() {
         let env = ProcessInfo.processInfo.environment
@@ -64,22 +69,77 @@ final class BatchModel: ObservableObject {
         }
         if let root {
             let config = (try? String(contentsOfFile: root + "/config_server.py", encoding: .utf8)) ?? ""
-            model = readModelType(config)
+            model = readModelChoice(config, memory: ProcessInfo.processInfo.physicalMemory)
+        }
+    }
+
+    func selectModel(_ choice: String) {
+        let previous = model
+        model = choice
+        guard choice != previous else { return }
+        guard let root else {
+            status = "找不到 CapsWriter 目录"
+            return
+        }
+        let path = root + "/config_server.py"
+        let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        do {
+            let updated = try writeModelChoice(text, choice: choice)
+            if updated != text {
+                let url = URL(fileURLWithPath: path)
+                let temporary = url.appendingPathExtension("partial")
+                try updated.write(to: temporary, atomically: true, encoding: .utf8)
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+                note("model saved")
+                onConfigurationChanged()
+            }
+        } catch {
+            model = previous
+            status = "模型没有写入"
+            note("model save failed")
         }
     }
 
     func beginPrepare() {
         guard !preparing, !ready else { return }
-        guard let root else {
+        guard root != nil else {
             status = "找不到 CapsWriter 目录"
             note("prepare failed")
             return
         }
+        let stamped = readStampedModel()
+        let launching = model
+        loadedServerModel = loadedModelAfterProbe(stamped: stamped, launching: launching, portOpen: false)
         preparing = true
         ready = false
         lamp = .yellow
         readyText = "正在准备"
         prepareOutput = ""
+        let port = serverPort()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let open = tcpPortOpen(host: "127.0.0.1", port: port)
+            Task { @MainActor in
+                guard let self else { return }
+                self.loadedServerModel = loadedModelAfterProbe(
+                    stamped: stamped, launching: launching, portOpen: open
+                )
+                if shouldRecordLaunchModel(stamped: stamped, portOpen: open) {
+                    self.writeStampedModel(self.loadedServerModel)
+                }
+                self.launchPrepare()
+            }
+        }
+    }
+
+    private func launchPrepare() {
+        guard let root else {
+            preparing = false
+            lamp = .red
+            readyText = "还没准备好"
+            status = "找不到 CapsWriter 目录"
+            note("prepare failed")
+            return
+        }
         let start = startServer
         let process = Process()
         process.currentDirectoryURL = URL(fileURLWithPath: root)
@@ -123,7 +183,39 @@ final class BatchModel: ObservableObject {
             status = "还没准备好"
             return
         }
+        guard root != nil else {
+            status = "找不到 CapsWriter 目录"
+            return
+        }
+        do {
+            _ = try batchArguments(
+                target: target,
+                recursive: recursive,
+                splitLong: splitLong,
+                force: force,
+                hidden: hidden,
+                startServer: startServer,
+                stopServer: stopServer,
+                model: model
+            )
+        } catch ShellError.emptyTarget {
+            status = "先填入或打开一个文件、文件夹"
+            return
+        } catch {
+            status = "不支持的模型"
+            return
+        }
+        if serverMustRestart(loaded: loadedServerModel, selected: model) {
+            beginModelSwitch()
+            return
+        }
+        launchBatch()
+    }
+
+    private func launchBatch() {
         guard let root else {
+            busy = false
+            waitingForModelSwitch = false
             status = "找不到 CapsWriter 目录"
             return
         }
@@ -140,9 +232,11 @@ final class BatchModel: ObservableObject {
                 model: model
             )
         } catch ShellError.emptyTarget {
+            busy = false
             status = "先填入或打开一个文件、文件夹"
             return
         } catch {
+            busy = false
             status = "不支持的模型"
             return
         }
@@ -181,8 +275,14 @@ final class BatchModel: ObservableObject {
 
     func stop() {
         stoppedByUser = true
+        let switching = waitingForModelSwitch
+        waitingForModelSwitch = false
         if busy {
-            status = "正在停止"
+            status = switching ? "已停止" : "正在停止"
+        }
+        if switching {
+            busy = false
+            note("model switch cancelled")
         }
         if let batchProcess, batchProcess.isRunning {
             batchProcess.terminate()
@@ -217,6 +317,79 @@ final class BatchModel: ObservableObject {
             return ClientSettings()
         }
         return ClientSettings(text: text)
+    }
+
+    private func beginModelSwitch() {
+        busy = true
+        waitingForModelSwitch = true
+        stoppedByUser = false
+        status = "正在换成所选模型"
+        note("model switch")
+        let from = modelChoices.first { $0.id == loadedServerModel }?.label ?? loadedServerModel
+        let to = modelChoices.first { $0.id == model }?.label ?? model
+        append("服务端仍是 \(from)，正在换成 \(to)。\n")
+        stopBackground { [weak self] in
+            self?.probePort(attempt: 0)
+        }
+    }
+
+    private func probePort(attempt: Int) {
+        let port = serverPort()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let open = tcpPortOpen(host: "127.0.0.1", port: port)
+            Task { @MainActor in
+                self?.continueAfterProbe(open: open, attempt: attempt)
+            }
+        }
+    }
+
+    private func continueAfterProbe(open: Bool, attempt: Int) {
+        guard waitingForModelSwitch else { return }
+        switch portWait(open: open, attempt: attempt, limit: portWaitLimit) {
+        case .closed:
+            waitingForModelSwitch = false
+            loadedServerModel = model
+            writeStampedModel(model)
+            launchBatch()
+        case .stillOpen:
+            waitingForModelSwitch = false
+            busy = false
+            status = "服务端还在用原来的模型"
+            note("model switch failed")
+            append("服务端还在用原来的模型\n")
+        case .keepWaiting:
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                Task { @MainActor in
+                    self?.probePort(attempt: attempt + 1)
+                }
+            }
+        }
+    }
+
+    private func serverPort() -> UInt16 {
+        let port = clientSettings().port
+        if port > 0 && port < 65536 { return UInt16(port) }
+        return 6016
+    }
+
+    private func loadedModelFile() -> String? {
+        guard let root else { return nil }
+        return root + "/logs/loaded_model.txt"
+    }
+
+    private func readStampedModel() -> String? {
+        guard let path = loadedModelFile() else { return nil }
+        return try? String(contentsOfFile: path, encoding: .utf8)
+    }
+
+    private func writeStampedModel(_ choice: String) {
+        guard let path = loadedModelFile() else { return }
+        let url = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? (choice + "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func finishPrepare(_ process: Process) {
@@ -283,8 +456,7 @@ final class BatchModel: ObservableObject {
         let now = Date()
         let stamped = stampLine(line, now: now)
         guard logLineVisible(stamped, level: logLevel) else { return }
-        guard progressLog.keep(stamped, at: now) else { return }
-        log += stamped + "\n"
+        progressLog.apply(&log, stamped)
         if log.count > 200_000 {
             log.removeFirst(log.count - 200_000)
         }
@@ -317,4 +489,23 @@ final class BatchModel: ObservableObject {
                 && isDirectory.boolValue
         }
     }
+}
+
+private func tcpPortOpen(host: String, port: UInt16) -> Bool {
+    let sock = socket(AF_INET, SOCK_STREAM, 0)
+    if sock < 0 { return false }
+    defer { close(sock) }
+    var timeout = timeval(tv_sec: 0, tv_usec: 400_000)
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    var addr = sockaddr_in()
+    addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = port.bigEndian
+    if inet_pton(AF_INET, host, &addr.sin_addr) != 1 { return false }
+    let result = withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            connect(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+    }
+    return result == 0
 }

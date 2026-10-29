@@ -1,9 +1,12 @@
 # coding: utf-8
 """Apple Silicon 的本地编译和清理。
 
-build 调用 build.spec，再把 Swift 界面、服务端和复制进来的模型收成 dist/CapsWriter.app。
-client 只打客户端收集目录，不打这个 app。
-clean 只删除仓库里的 build 和 dist。仓库里的 models 不动。
+build 一次打出 dist/CapsWriter.app 和 dist/CapsWriter-<version>.dmg。
+app 里是 Swift 界面、服务端和复制进来的模型。
+dmg 里是这个 app，以及指向 /Applications 的 Applications 链接。
+client 只打客户端收集目录，不打 app，也不打 dmg。
+成功之后删掉 PyInstaller 的 build、Swift 的 .build，以及 /tmp/cw-swift。
+clean 连同 dist 一起删。仓库里的 models 不动。
 dist 里的程序还在跑时，两件事都不做。
 解释器会跳过没有 PyInstaller 的 python3。
 """
@@ -163,9 +166,26 @@ def pyinstaller_command(python, spec):
     return [python, '-m', 'PyInstaller', '--noconfirm', '--clean', spec]
 
 
-def artifact_dirs(root):
+SWIFT_SCRATCH = Path('/tmp/cw-swift')
+
+
+def process_junk_dirs(root, scratch=None):
+    """PyInstaller 工作目录、包内 .build，以及本机 Swift 临时目录。"""
     root = Path(root)
-    return [root / 'build', root / 'dist']
+    scratch = SWIFT_SCRATCH if scratch is None else Path(scratch)
+    return [
+        root / 'build',
+        root / 'macos' / 'CapsWriterShell' / '.build',
+        scratch,
+    ]
+
+
+def clean_dirs(root, scratch=None):
+    return [Path(root) / 'dist'] + process_junk_dirs(root, scratch)
+
+
+def artifact_dirs(root):
+    return clean_dirs(root)
 
 
 def _inside(path, root):
@@ -174,17 +194,62 @@ def _inside(path, root):
     return path == root or root in path.parents
 
 
-def remove_artifact(path, root):
+def _scratch_allowed(scratch, root):
+    """只允许删 /tmp/cw-swift，或测试仓库里同名的那一个。"""
+    scratch = Path(scratch)
+    root = Path(root).resolve()
+    if scratch.name != 'cw-swift' or scratch.is_symlink():
+        return False
+    try:
+        resolved = scratch.resolve() if scratch.exists() else scratch
+    except OSError:
+        return False
+    banned = {
+        Path('/'), Path('/tmp'), Path('/private'), Path('/private/tmp'),
+        Path('/Volumes'), Path('/Users'), Path('/System'),
+    }
+    if resolved in banned or resolved == root:
+        return False
+    for name in ('models', 'logs'):
+        folder = root / name
+        if resolved == folder or folder in resolved.parents:
+            return False
+    if root in resolved.parents:
+        return True
+    return scratch.parent.as_posix() in ('/tmp', '/private/tmp')
+
+
+def _link_lives_in_repo(path, root):
+    parent = Path(path).parent.resolve()
+    root = Path(root).resolve()
+    return parent == root or root in parent.parents
+
+
+def remove_artifact(path, root, scratch=None):
     path = Path(path)
+    root = Path(root)
+    scratch = SWIFT_SCRATCH if scratch is None else Path(scratch)
     if not path.exists() and not path.is_symlink():
         return False
     if path.is_symlink():
+        if not (_link_lives_in_repo(path, root) or path == scratch):
+            raise BuildError('拒绝删除仓库外面的路径: %s' % path)
         path.unlink()
         return True
-    if Path(path).resolve() == Path(root).resolve() or not _inside(path, root):
-        raise BuildError('拒绝删除仓库外面的路径: %s' % path)
-    shutil.rmtree(path)
-    return True
+    inside = _inside(path, root) and Path(path).resolve() != Path(root).resolve()
+    if inside:
+        resolved = Path(path).resolve()
+        root_resolved = Path(root).resolve()
+        for name in ('models', 'logs'):
+            folder = root_resolved / name
+            if resolved == folder or folder in resolved.parents:
+                raise BuildError('拒绝删除仓库外面的路径: %s' % path)
+        shutil.rmtree(path)
+        return True
+    if path == scratch and _scratch_allowed(scratch, root):
+        shutil.rmtree(path)
+        return True
+    raise BuildError('拒绝删除仓库外面的路径: %s' % path)
 
 
 def watched_binaries(root):
@@ -261,16 +326,39 @@ def format_busy(entries):
     return '\n'.join(lines)
 
 
-def clean_repo(root, lsof_fn=None, remove_fn=None):
+def _remover(remove_fn, scratch):
+    if remove_fn is not None:
+        return remove_fn
+
+    def remove(path, root):
+        return remove_artifact(path, root, scratch=scratch)
+
+    return remove
+
+
+def clean_repo(root, lsof_fn=None, remove_fn=None, scratch=None):
     root = Path(root)
+    scratch = SWIFT_SCRATCH if scratch is None else Path(scratch)
     lsof_fn = default_lsof if lsof_fn is None else lsof_fn
-    remove_fn = remove_artifact if remove_fn is None else remove_fn
+    remove = _remover(remove_fn, scratch)
     busy = busy_entries(root, lsof_fn)
     if busy:
         raise BuildError(format_busy(busy))
     removed = []
-    for path in artifact_dirs(root):
-        if remove_fn(path, root):
+    for path in clean_dirs(root, scratch):
+        if remove(path, root):
+            removed.append(path)
+    return removed
+
+
+def drop_process_junk(root, scratch=None, remove_fn=None):
+    """编译已经成功时，删掉中间文件。dist 里的 app 留下。"""
+    root = Path(root)
+    scratch = SWIFT_SCRATCH if scratch is None else Path(scratch)
+    remove = _remover(remove_fn, scratch)
+    removed = []
+    for path in process_junk_dirs(root, scratch):
+        if remove(path, root):
             removed.append(path)
     return removed
 
@@ -288,6 +376,85 @@ def file_kind(path):
     if proc.returncode != 0:
         return ''
     return proc.stdout.strip()
+
+
+DMG_VOLUME = 'CapsWriter'
+DMG_FORMAT = 'UDZO'
+
+
+def dmg_name(version):
+    return 'CapsWriter-%s.dmg' % version
+
+
+def dmg_layout(app, version):
+    """镜像里放 app，以及名为 Applications、指向 /Applications 的链接。"""
+    app = Path(app)
+    image = app.parent / dmg_name(version)
+    stage = app.parent / ('.dmg-stage-%s' % version)
+    return {
+        'image': image,
+        'stage': stage,
+        'app': stage / app.name,
+        'applications': stage / 'Applications',
+        'volume': DMG_VOLUME,
+        'format': DMG_FORMAT,
+    }
+
+
+def stage_dmg(app, version):
+    """准备拖进「应用程序」的目录。app 用 APFS 克隆，失败再复制。"""
+    app = Path(app)
+    if not app.is_dir():
+        raise BuildError('没有 app %s' % app)
+    layout = dmg_layout(app, version)
+    stage = layout['stage']
+    if stage.is_symlink():
+        stage.unlink()
+    elif stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
+    cloned = subprocess.run(
+        ['cp', '-cR', str(app), str(layout['app'])],
+        capture_output=True,
+        text=True,
+    )
+    if cloned.returncode != 0:
+        shutil.copytree(app, layout['app'], symlinks=True)
+    layout['applications'].symlink_to('/Applications')
+    return layout
+
+
+def hdiutil_command(layout):
+    return [
+        'hdiutil', 'create',
+        '-volname', layout['volume'],
+        '-srcfolder', str(layout['stage']),
+        '-ov',
+        '-format', layout['format'],
+        str(layout['image']),
+    ]
+
+
+def create_dmg(app, version, runner=None):
+    """打出未签名的 dmg。镜像里是 app 和 Applications 链接，不是符号链接回仓库。"""
+    layout = stage_dmg(app, version)
+    command = hdiutil_command(layout)
+    run = subprocess.run if runner is None else runner
+    try:
+        proc = run(command)
+        code = proc.returncode if hasattr(proc, 'returncode') else int(proc)
+        if code != 0:
+            raise BuildError('hdiutil 失败，退出码 %s' % code, code or 1)
+        image = layout['image']
+        if runner is None and not image.is_file():
+            raise BuildError('没有打出 %s' % image)
+    finally:
+        stage = layout['stage']
+        if stage.is_symlink():
+            stage.unlink()
+        elif stage.exists():
+            shutil.rmtree(stage)
+    return layout['image']
 
 
 def check_collect(dest, names, kind_of, require_mlx):
@@ -322,11 +489,16 @@ def read_project_version(path):
     return match.group(1)
 
 
-def compile_shell(root, runner=None):
-    """编 Swift 界面。runner 只给测试替身用，真编译还要再问一次产物路径。"""
+def compile_shell(root, runner=None, scratch=None):
+    """编 Swift 界面。临时文件放在本机 /tmp，不堆在外置盘的 .build 里。"""
     root = Path(root)
+    scratch = SWIFT_SCRATCH if scratch is None else Path(scratch)
     package = root / 'macos' / 'CapsWriterShell'
-    command = ['swift', 'build', '-c', 'release', '--package-path', str(package)]
+    command = [
+        'swift', 'build', '-c', 'release',
+        '--package-path', str(package),
+        '--scratch-path', str(scratch),
+    ]
     run = subprocess.run if runner is None else runner
     proc = run(command, cwd=str(root))
     code = proc.returncode if hasattr(proc, 'returncode') else int(proc)
@@ -386,8 +558,9 @@ def assemble_macos_app(root, collect, shell_binary, version=None):
     return app
 
 
-def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None, package_app=True, shell_binary=None, swift_runner=None):
+def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None, package_app=True, shell_binary=None, swift_runner=None, scratch=None, dmg_runner=None):
     root = Path(root)
+    scratch = SWIFT_SCRATCH if scratch is None else Path(scratch)
     lsof_fn = default_lsof if lsof_fn is None else lsof_fn
     busy = busy_entries(root, lsof_fn)
     if busy:
@@ -417,8 +590,9 @@ def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, 
     if errors:
         raise BuildError('\n'.join(errors))
     if client_only or not package_app:
+        drop_process_junk(root, scratch=scratch)
         return [collect / name for name in names]
-    binary = Path(shell_binary) if shell_binary else compile_shell(root, runner=swift_runner)
+    binary = Path(shell_binary) if shell_binary else compile_shell(root, runner=swift_runner, scratch=scratch)
     if binary is None:
         raise BuildError('没有打出 Swift 界面')
     version = read_project_version(root / 'pyproject.toml')
@@ -440,7 +614,9 @@ def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, 
         packed.append('包里没有图标')
     if packed:
         raise BuildError('\n'.join(packed))
-    return [app]
+    image = create_dmg(app, version, runner=dmg_runner)
+    drop_process_junk(root, scratch=scratch)
+    return [app, image]
 
 
 def dispatch(argv, root, system_name=None, machine=None, **kwargs):
@@ -454,13 +630,18 @@ def dispatch(argv, root, system_name=None, machine=None, **kwargs):
         return 2
     try:
         if argv[1] == 'clean':
-            removed = clean_repo(root, lsof_fn=kwargs.get('lsof_fn'), remove_fn=kwargs.get('remove_fn'))
+            removed = clean_repo(
+                root,
+                lsof_fn=kwargs.get('lsof_fn'),
+                remove_fn=kwargs.get('remove_fn'),
+                scratch=kwargs.get('scratch'),
+            )
             if removed:
                 print('已删除：')
                 for path in removed:
                     print(path)
             else:
-                print('没有 build 或 dist。')
+                print('没有需要清理的编译文件。')
             return 0
         made = build_repo(root, client_only=extra == ['client'], **{
             key: kwargs[key]

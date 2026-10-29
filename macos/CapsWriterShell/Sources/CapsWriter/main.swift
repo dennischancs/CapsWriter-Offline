@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var window: NSWindow!
     private var model: BatchModel!
     private var dictation: DictationController!
+    private var store: ConfigStore!
     private var shellLog = ShellLog()
     private var quitting = false
     private var dictationStatus = "按住右 Option"
@@ -19,6 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         model.note = { [weak self] kind in
             Task { @MainActor in self?.note(kind) }
         }
+        store = ConfigStore(root: model.root, python: model.python)
+        store.note = { [weak self] kind in
+            Task { @MainActor in self?.note(kind) }
+        }
+        model.onConfigurationChanged = { [weak self] in
+            self?.store.reload()
+        }
+        store.load()
         dictation = DictationController()
         dictation.note = { [weak self] kind in
             Task { @MainActor in self?.note(kind) }
@@ -151,9 +160,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func buildWindow() {
-        let host = NSHostingController(rootView: BatchWindowView(model: model))
+        let host = NSHostingController(rootView: RootView(model: model, store: store))
         window = NSWindow(contentViewController: host)
-        window.title = "批量转录"
+        window.title = "CapsWriter"
         window.setContentSize(NSSize(width: 860, height: 620))
         window.minSize = NSSize(width: 760, height: 520)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -233,7 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     private func askChoice() -> ClosePrompt? {
         let alert = NSAlert()
-        alert.messageText = "关闭批量转录"
+        alert.messageText = "关闭 CapsWriter"
         alert.informativeText = "缩小到菜单栏，或退出并结束后台服务。"
         alert.addButton(withTitle: "缩小到菜单栏")
         alert.addButton(withTitle: "退出")

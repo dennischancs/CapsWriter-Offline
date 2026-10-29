@@ -65,6 +65,8 @@ class TaskPipeline:
             is_first_segment = task.task_id not in self.state.sessions
             session = self.state.get_session(task.task_id, task.socket_id, task.type)
             result = session.result
+            if task.seg_duration > 0:
+                result.seg_duration = task.seg_duration
 
             # GPU 加速活跃时间更新（只要有任务进来就刷新）
             if Config.gpu_boost_enabled and self.state.gpu_boosted:

@@ -57,15 +57,18 @@ struct BatchWindowView: View {
     private var toolRow: some View {
         HStack(spacing: 8) {
             Text("模型")
-            Picker("", selection: $model.model) {
+            Picker("", selection: Binding(
+                get: { model.model },
+                set: { model.selectModel($0) }
+            )) {
                 ForEach(modelChoices, id: \.id) { item in
                     Text(item.label).tag(item.id)
                 }
             }
             .labelsHidden()
-            .frame(width: 180)
+            .frame(width: 210)
             .disabled(model.busy)
-            .help("下次开始前写入配置并重启服务端。正在转录时不能换。")
+            .help("Qwen3-ASR 可选 1.7B 或 0.6B。换了马上写入服务端配置，server 标签跟着变。下次开始时，服务端若还是旧模型，会先停掉再拉起。正在转录时不能换。")
             Text("日志")
             Picker("", selection: $model.logLevel) {
                 ForEach(logLevels, id: \.self) { level in
@@ -74,7 +77,7 @@ struct BatchWindowView: View {
             }
             .labelsHidden()
             .frame(width: 120)
-            .help("窗口里显示到哪一级。DEBUG 最详细，ERROR 只留错误。发送进度和转录进度至少隔 30 秒一行。")
+            .help("窗口里显示到哪一级。DEBUG 最详细，ERROR 只留错误。发送进度和转录进度各自只占一行，数字从 0、60、120 改到这段音频结束。")
             Spacer()
         }
     }

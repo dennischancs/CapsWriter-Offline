@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.22.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.33.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -45,6 +45,20 @@
 - [x] 2.22.0 macOS 专用外壳是未签名的 `dist/CapsWriter.app`。菜单栏、权限、右 Option 听写、粘贴，以及和批量脚本同一套选项的窗口都在这个外壳里。识别仍由 `start_server` 做。窗口先出现，没到绿灯不能开始转录。短按提示「按得太短」，静音提示「这段录音是静音」。热词和 LLM 仍在 Python 客户端。
 - [x] 2.22.1 从 Finder 打开外壳做文件转录时，能找到 Homebrew 或 /usr/local 里的 ffmpeg。原来的 PATH 还在。没装 ffmpeg 时仍提示未找到。
 - [x] 2.23.0 外壳有 Cw 图标。关闭批量窗口时可选缩小到菜单栏或退出，勾选「记住我的选择」后才记住。缩到菜单栏后左键打开窗口，右键打开菜单。菜单和关于里能看到 CapsWriter。
+- [x] 2.24.0 界面里的发送进度和转录进度至少隔 30 秒一行。`dist/CapsWriter.app` 里带上服务端、批量转录和复制进去的模型。
+- [x] 2.25.0 发送进度和转录进度写明，这一段是音频文件的 60 秒，不是系统时间的 60 秒。界面仍按系统时间至少隔 30 秒才再留一行。
+- [x] 2.26.0 外壳窗口的首页仍是批量转换。client 和 server 两个标签列出 start_client、start_server 启动时能看到的内容，以及两个配置文件里的全部可改项。勾选和填空按文件里的默认值。推荐值是灰的，双击并确认后才能改。鼠标停在每一项上能看到说明。
+- [x] 2.27.0 发送进度和转录进度的分子按音频的 0、60、120 往后走，直到这段音频结束。日志里不再写那句 60 秒说明。
+- [x] 2.28.0 批量窗口的模型菜单里，Qwen3-ASR 分成 1.7B 和 0.6B。选中后写入 `qwen_asr` 和对应规格。`auto` 不单列，窗口显示按内存会加载的那一个。
+- [x] 2.29.0 `./build-macos.sh` 一次打出 `dist/CapsWriter.app`，里面是 Swift 界面、服务端和复制进去的模型。`./clean-macos.sh` 一次删掉 `build`、`dist`、Swift 的 `.build` 和 `/tmp/cw-swift`。仓库里的 `models` 还在。程序还在跑时不删。
+- [x] 2.29.1 打包后的批量转录能从 `core.client.transcribe.file_transcriber` 导入 `FileTranscriber`。空文件不再被当成可转录的副本。
+- [x] 2.30.0 批量转换里一换模型，`config_server.py` 的模型和 Qwen 规格马上改掉，server 标签的「现在这样跑」和下面的表单跟着变成同一个值。client 没有模型项，不跟着变。
+- [x] 2.31.0 批量菜单里看到的模型和 Qwen 规格，server 标签「现在这样跑」显示同一个值。`auto` 按内存展开成 1.7b 或 0.6b，不再停在 auto。client 标签没有模型项，不跟着变。
+- [x] 2.32.0 macOS 不再安装 `tkhtmlview`、`tkinterdnd2`，也不再要求 `python-tk`。不带参数运行 `batch_transcribe.py` 不打开 Tk，提示改用 CapsWriter.app。Windows 的 Tk 提示还在。
+- [x] 2.32.1 client 和 server 标签能打开。配置摘要不再导入打包后的 `batch_transcribe`。`auto` 仍按内存展开成 1.7b 或 0.6b。发送进度按这段音频的 0、60、120 留下，最后一行是音频的真实长度。
+- [x] 2.32.2 发送进度只占一行，转录进度只占另一行。数字从 0、60、120 改到这段音频的结尾，完成时间留在这一行上。处理耗时另起一行。
+- [x] 2.32.3 服务端已经开着时，批量窗口换成另一个模型再转录，会先停掉原来的进程，再用新模型拉起。配置文件提前写好也不再沿用内存里的旧模型。
+- [x] 2.33.0 `./build-macos.sh` 打出未签名的 `dist/CapsWriter-2.33.0.dmg`。打开后能把 CapsWriter 拖进「应用程序」。`./build-macos.sh client` 不打这个 dmg。
 - [x] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [x] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限、并且列不出任何输入设备时，提示去系统设置，进程不崩溃。默认输入编号是 -1、但还能列出输入设备时，日志写出这些编号，约 2 秒打不开就跳过，不把这件事说成没有麦克风权限。没有辅助功能权限时文字留在系统通知和终端里，不上屏。
 
@@ -170,6 +184,7 @@ Paraformer 和 CT-Transformer 标点没有可接入的 Python MLX 实现。它�
 选择规则：
 
 - 用户把 `qwen_mlx_variant` 写成 `0.6b` 或 `1.7b` 时，照做。
+- 批量窗口把 Qwen3-ASR 分成 1.7B 和 0.6B。选中后马上写入 `model_type = qwen_asr` 和对应的 `qwen_mlx_variant`。`auto` 不单列；窗口显示按内存会加载的那一个。server 标签重读这份配置，摘要和表单都换成刚选的模型和规格。client 标签没有这两项。
 - `auto`：统一内存大于等于 16GB 用 1.7B 8bit，否则 0.6B 8bit。
 - 1.7B 因内存加载失败时，同一进程改加载 0.6B，只重试一次。
 - 麦克风不加载对齐器。文件任务才加载，闲置后按现有 `aligner_idle_timeout` 卸掉，并清 MLX 缓存。

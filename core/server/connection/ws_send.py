@@ -4,7 +4,7 @@ from ..state import console
 from ..schema import Result
 from core.protocol import RecognitionMessage
 from core.tools.asyncio_to_thread import to_thread
-from core.tools.progress_log import ProgressGate, show_progress
+from core.tools.progress_log import ProgressGate, show_progress, transcribe_progress_text
 from .. import logger
 
 
@@ -59,10 +59,15 @@ async def ws_send(app):
             if result.type == 'mic':
                 logger.info(f"麦克风识别结果: {result.text}")
             elif result.type == 'file':
+                interval = result.seg_duration if result.seg_duration > 0 else 60
                 show_progress(
                     console,
                     file_progress,
-                    f'    转录进度：{result.duration:.2f}s',
+                    transcribe_progress_text(
+                        result.duration,
+                        interval,
+                        finished=bool(result.is_final),
+                    ),
                     identity=result.task_id,
                 )
                 logger.debug(f"文件转录进度: {result.duration:.2f}s")

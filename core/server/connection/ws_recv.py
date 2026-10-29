@@ -114,6 +114,7 @@ async def message_handler(websocket, msg: AudioMessage, cache: AudioCache, app) 
                     time_submit=time.time(),
                     context=msg.context,
                     language=msg.language,
+                    seg_duration=msg.seg_duration,
                 )
                 cache.offset += msg.seg_duration
                 queue_in.put(task)
@@ -143,6 +144,7 @@ async def message_handler(websocket, msg: AudioMessage, cache: AudioCache, app) 
                 time_submit=time.time(),
                 context=msg.context,
                 language=msg.language,
+                seg_duration=msg.seg_duration,
             )
             queue_in.put(task)
             logger.debug(f"提交最终片段，任务ID: {msg.task_id}, 数据大小: {len(cache.chunks)} bytes")

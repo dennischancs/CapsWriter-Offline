@@ -1,5 +1,75 @@
 # 更新日志
 
+## v2.33.0
+
+- **安装盘**：`./build-macos.sh` 在 `dist/CapsWriter.app` 旁边打出未签名的 `dist/CapsWriter-2.33.0.dmg`。打开后左边是 CapsWriter，右边是「应用程序」，拖过去即可安装。`./build-macos.sh client` 不打这个盘。`./clean-macos.sh` 仍一次删掉 `dist`，盘和 app 一起消失，仓库里的模型不动。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_macos_build tests.test_build_support`，34 项通过。没有重跑 PyInstaller，也没有重编 Swift。用已经存在的 `dist/CapsWriter.app` 打出 6.3GB 的 dmg。只读挂载后是 `CapsWriter.app` 和 `Applications -> /Applications`，随后卸掉。
+
+## v2.32.3
+
+- **换模型会换掉已经开着的服务端**：批量窗口里从 SenseVoice Small 换成 Qwen，或在 Qwen 1.7B 和 0.6B 之间换，下一次开始会先停掉还在用旧模型的进程，再按新模型拉起。配置文件提前写好也不再直接复用 6016 上的旧进程。窗口先把新模型写入配置时，只要这份配置比正在运行的服务端新，打包后的 `batch_transcribe` 也会重启。端口关不掉时不开始，并写明服务端还在用原来的模型。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_config_form tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，68 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，19 项通过。没有整包重打，模型仍是原来的副本。换进 app 的是 Swift 界面，以及重新打包的 `batch_transcribe`。
+
+## v2.32.2
+
+- **进度不再往下刷**：发送进度始终一行，转录进度始终另一行。数字仍按这段音频的 0、60、120 往前改，最后停在真实时长上，完成时间留在这一行的时间戳里。处理耗时、完成、失败和文件名仍另起一行。下一个文件从头计时，不改掉上一份已经结束的那一行。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_config_form tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，66 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，18 项通过。这次没有重跑整包，只换了 `dist/CapsWriter.app` 里的 Swift 界面。
+
+## v2.32.1
+
+- **client 和 server 能打开**：这两个标签读配置时不再 `import batch_transcribe`。打包后的 `batch_transcribe` 是可执行文件，不是 Python 模块，所以原来整页都是 `No module named 'batch_transcribe'`。`auto` 仍按内存展开成 `1.7b` 或 `0.6b`，选了具体规格或换成别的引擎后，摘要跟着变。
+- **发送进度不再刷屏**：605.77 秒的文件不再从 `0.04s`、`0.06s`、`1.09s` 一直写到结尾。分子按这段音频的 0、60、120 留下，最后一行是 `605.77s`。转录进度用同样的全角冒号和分档。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_config_form tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，65 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift`，18 项通过。`./build-macos.sh` 打出 `dist/CapsWriter.app`，短版本 2.32.1。包内 `python -m core.tools.config_form dump` 能写出摘要，`auto` 展开成 `1.7b`。打开 app 后，client 和 server 都是配置页，不再是那条导入错误。
+
+## v2.32.0
+
+- **去掉 macOS 的 Tk 依赖**：`requirements-macos.txt` 不再列 `tkhtmlview` 和 `tkinterdnd2`。`pyproject.toml` 里的 `tkhtmlview` 只留给 Windows。Darwin 打包不再收集 `tkinterdnd2`。安装说明不再要求 `python-tk`。
+- **不打开 Tk**：在 macOS 上不带参数运行 `batch_transcribe.py` 退出码是 2，并提示打开 `dist/CapsWriter.app`。Windows 不带参数仍打开原来的批量窗口。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support tests.test_macos_port`，91 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+## v2.31.0
+
+- **同一个模型**：批量菜单里看到的模型和 Qwen 规格，server 标签「现在这样跑」显示同一个值。配置写成 `auto` 时，两边都按内存展开成 `1.7b` 或 `0.6b`，不再一边是具体规格、一边停在 auto。选了 `0.6b` 或换到 SenseVoice 之后，摘要跟着变。client 标签没有模型项，不跟着变。下面的配置表单仍显示文件里的原文，写入后下次启动才生效。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_config_form tests.test_batch_transcribe tests.test_build_support`，57 项通过。`swift test --package-path macos/CapsWriterShell`，18 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+## v2.30.0
+
+- **模型和标签**：批量转换里一换模型，马上写入 `config_server.py`。server 标签的「现在这样跑」和下面的模型、Qwen 规格跟着变成同一个值。client 标签没有模型项，不跟着变。正在转录时仍不能换。
+- 验证：和 2.31.0 一起跑。capswriter 环境的 `python3 -m unittest tests.test_config_form tests.test_batch_transcribe tests.test_build_support`，57 项通过。`swift test --package-path macos/CapsWriterShell`，18 项通过。
+
+## v2.29.1
+
+- **批量转录**：恢复被清空的 `core/client/transcribe/file_transcriber.py`。`FileTranscriber` 又能导入。已打进 `dist/CapsWriter.app` 的那份空文件也换回这份源码，不用整包重打。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_build_support tests.test_batch_transcribe`，47 项通过。打包副本能 `import FileTranscriber`。
+
+## v2.29.0
+
+- **一次打出 app**：`./build-macos.sh` 打出未签名的 `dist/CapsWriter.app`。Swift 界面在 `Contents/MacOS`，服务端、客户端、批量转录和模型在 `Contents/Resources/runtime`。模型是复制进去的真实文件，不是指回仓库的符号链接。成功后删掉 PyInstaller 的 `build`、Swift 的 `.build` 和 `/tmp/cw-swift`。`./build-macos.sh client` 仍只打客户端。
+- **一次清理**：`./clean-macos.sh` 删掉 `build`、`dist`（含这个 app）、`macos/CapsWriterShell/.build` 和 `/tmp/cw-swift`。仓库里的 `models` 不动。这些程序还在跑时不删，也不开始编译。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_macos_build tests.test_build_support`，31 项通过。`./build-macos.sh` 打出 7.5GB 的 `dist/CapsWriter.app`，短版本 2.29.0。Swift 界面、`start_server`、`batch_transcribe` 都是 arm64 Mach-O。包里的 `models` 没有符号链接，仓库里的 `models` 仍是 6.9GB。`build`、`.build` 和 `/tmp/cw-swift` 已经不在。
+
+## v2.28.0
+
+- **Qwen3-ASR**：批量窗口的模型菜单分成 Qwen3-ASR 1.7B 和 Qwen3-ASR 0.6B。选中后写入 `model_type = qwen_asr`，以及 `qwen_mlx_variant` 的 `1.7b` 或 `0.6b`。SenseVoice、Fun-ASR Nano、Paraformer 不变。配置里的 `auto` 不单列；窗口按内存显示将要加载的那一个，和当前一致时不重启服务端。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_batch_transcribe tests.test_build_support`，46 项通过。`swift test --package-path macos/CapsWriterShell`，18 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+## v2.27.0
+
+- **进度分子**：发送进度和转录进度不再写「音频文件的 60 秒」这句说明。分子按这段音频往前走：0、60、120、180，直到音频结束。605.77 秒的文件最后一行是 605.77，不是停在 600。同一档不重复写。完成、失败和文件名仍马上留下。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_progress_log tests.test_batch_transcribe tests.test_build_support`，50 项通过。`swift build --package-path macos/CapsWriterShell` 通过。`swift test --package-path macos/CapsWriterShell`，17 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+## v2.26.0
+
+- **client 和 server**：外壳窗口的首页仍是批量转换。另外两个标签叫 client 和 server。上面是 start_client、start_server 启动时能看到的版本、地址、快捷键和模型，下面是 `config_client.py`、`config_server.py` 里的全部可改项。打开时按文件里的值填好。默认关着的保持关，例如粘贴（Windows）、合并长文本、UDP 和显卡预加速。
+- **推荐值**：阈值、分段、模型路径和引擎参数是灰的。双击这一行，确认「这是推荐值。确定要修改吗？」之后才能改。只在这一次打开窗口里记住，不另写一份。
+- **说明**：鼠标停在每一项上能看到它是干什么的。分段里的 60 秒仍是音频里的秒，不是系统时间。改完要点「写入配置」，下次启动客户端或服务端才生效。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_config_form tests.test_build_support`，18 项通过。`swift build --package-path macos/CapsWriterShell` 通过。`swift test --package-path macos/CapsWriterShell`，17 项通过。这次没有重跑 PyInstaller，也没有组装 app。
+
+## v2.25.0
+
+- **进度里的 60 秒**：发送进度和转录进度写明，这一段是音频文件的 60 秒，不是系统时间的 60 秒。界面仍按系统时间至少隔 30 秒才再留一行。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_progress_log tests.test_build_support`，12 项通过。这次没有重跑 PyInstaller，也没有编译 Swift。
+
 ## v2.24.0
 
 - **进度日志**：界面里的「发送进度」和「转录进度」至少隔 30 秒一行。同一种进度的第一行马上出现。完成、失败、文件名，以及「未找到 ffmpeg」这类说明仍立刻出现。

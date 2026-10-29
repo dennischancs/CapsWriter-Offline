@@ -23,7 +23,12 @@ from .media_tool import MediaTool
 from .result_handler import ResultHandler
 from . import logger
 from core.tools.token_sync import sync_tokens_from_text
-from core.tools.progress_log import ProgressGate, show_progress
+from core.tools.progress_log import (
+    ProgressGate,
+    send_progress_text,
+    show_progress,
+    transcribe_progress_text,
+)
 
 if TYPE_CHECKING:
     from core.client.state import ClientState
@@ -136,6 +141,7 @@ class FileTranscriber:
             
             # 分块大小：1分钟音频 (16000 * 4 * 60 bytes)
             chunk_size = 16000 * 4 * 60
+            interval = Config.file_seg_duration or 60
             bytes_sent = 0
             
             while True:
@@ -145,11 +151,11 @@ class FileTranscriber:
                 
                 bytes_sent += len(data)
                 progress = bytes_sent / 4 / 16000
-                if self._audio_duration > 0:
-                    prog_str = f'    发送进度：{progress:.2f}s / {self._audio_duration:.2f}s'
-                else:
-                    prog_str = f'    发送进度：{progress:.2f}s'
-                show_progress(console, self._progress, prog_str)
+                show_progress(
+                    console,
+                    self._progress,
+                    send_progress_text(progress, self._audio_duration, interval),
+                )
 
                 message = AudioMessage(
                     task_id=self.task_id,
@@ -192,6 +198,17 @@ class FileTranscriber:
             if self._audio_duration == 0:
                 self._audio_duration = progress 
                 console.print(f'    音频长度：{self._audio_duration:.2f}s')
+            if self._audio_duration > 0:
+                show_progress(
+                    console,
+                    self._progress,
+                    send_progress_text(
+                        self._audio_duration,
+                        self._audio_duration,
+                        interval,
+                        finished=True,
+                    ),
+                )
 
             logger.debug("音频数据发送完成")
             return True
@@ -223,7 +240,15 @@ class FileTranscriber:
                 if not msg:
                     break
                 
-                show_progress(console, self._progress, f'    转录进度: {msg.duration:.2f}s')
+                show_progress(
+                    console,
+                    self._progress,
+                    transcribe_progress_text(
+                        msg.duration,
+                        Config.file_seg_duration or 60,
+                        finished=bool(msg.is_final),
+                    ),
+                )
                 if msg.is_final:
                     message = msg # 保持变量名兼容后续调用
                     break
