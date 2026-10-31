@@ -8,6 +8,7 @@ from .. import logger
 from ..base import BaseASREngine, EngineCapabilities
 from ..language import ENGINE_QWEN_ASR, get_language
 from .audio import result_text, transcribe
+from .catalog import ready_dirs
 from .loader import load_mlx_model, release
 from .stream import WaveformStream
 from .variant import load_qwen_with_fallback
@@ -36,9 +37,12 @@ class QwenMLXEngine(BaseASREngine):
             self.model_dir = path
             return model
 
-        self.model, variant, fell_back = load_qwen_with_fallback(preference, memory, loader)
+        present = ready_dirs(ModelPaths.mlx_dir)
+        self.model, variant, fell_back = load_qwen_with_fallback(
+            preference, memory, loader, present,
+        )
         if fell_back:
-            logger.warning('1.7B 加载失败，改用 0.6B 8bit')
+            logger.warning('1.7B 加载失败，改用 %s' % variant)
 
     @property
     def capabilities(self) -> List[EngineCapabilities]:

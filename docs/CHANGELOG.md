@@ -1,5 +1,15 @@
 # 更新日志
 
+## v2.37.2
+
+- **auto 有顺序**：16GB 及以上先找 1.7B 的 8bit、6bit、4bit、mxfp4，再找 0.6B 的同样四档。不到 16GB 时先 0.6B 再 1.7B。只用本机已经放好权重的目录，空目录不算。写明 `1.7b` 或 `1.7b-6bit` 时不往下找。菜单和配置摘要显示将要加载的那一档，点刷新后按新目录重选。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_macos_port.QwenVariantTest tests.test_config_form.ConfigFormTest.test_auto_summary_follows_installed_weights tests.test_config_form.ConfigFormTest.test_server_summary_follows_the_batch_model_menu tests.test_build_support.BuildSupportTest.test_version_sources_match`，6 项通过。`tests.test_batch_transcribe.FormTest tests.test_macos_port.QwenVariantTest`，17 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift --filter testQwenMenuHasTwoSizesAndKeepsTheSavedLine`，1 项通过。已安装的 app 换成同一份选择代码和菜单程序。没有重跑整包 PyInstaller。
+
+## v2.37.1
+
+- **auto 不再固定要 1.7B 8bit**：本机没有这一档时，启动改用已经放好的目录。这台安装包会用 Qwen3-ASR 1.7B 6bit。配置里写明 `1.7b` 或 `1.7b-8bit` 时，仍按这个名字查找。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_macos_port.QwenVariantTest`，3 项通过。已安装的 app 用同一份代码选出 `Qwen3-ASR-1.7B-6bit`。没有重跑 PyInstaller。
+
 ## v2.37.0
 
 - **Qwen 量化**：批量窗口里，Qwen3-ASR 1.7B 和 0.6B 都可以选 8bit、6bit、4bit、mxfp4。`auto` 仍按内存选 1.7B 或 0.6B 的 8bit。不带位数的 `1.7b`、`0.6b` 还是 8bit。推荐 1.7B 8bit 和 1.7B 6bit。

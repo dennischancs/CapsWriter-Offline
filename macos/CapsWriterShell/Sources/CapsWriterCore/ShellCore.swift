@@ -22,6 +22,14 @@ public let qwenVariants = [
     "0.6b", "0.6b-8bit", "0.6b-6bit", "0.6b-4bit", "0.6b-mxfp4",
 ]
 public let qwenLargeMemory: UInt64 = 16 * 1024 * 1024 * 1024
+public let qwenAutoLarge = [
+    "1.7b", "1.7b-6bit", "1.7b-4bit", "1.7b-mxfp4",
+    "0.6b", "0.6b-6bit", "0.6b-4bit", "0.6b-mxfp4",
+]
+public let qwenAutoSmall = [
+    "0.6b", "0.6b-6bit", "0.6b-4bit", "0.6b-mxfp4",
+    "1.7b", "1.7b-6bit", "1.7b-4bit", "1.7b-mxfp4",
+]
 public let logLevels = ["DEBUG", "INFO", "WARNING", "ERROR"]
 public let homebrewPython = "/opt/homebrew/Caskroom/miniforge/base/envs/capswriter/bin/python3"
 public let launchToolDirectories = ["/opt/homebrew/bin", "/usr/local/bin"]
@@ -405,17 +413,34 @@ public func readQwenVariant(_ text: String) -> String {
     return aliases[found.lowercased()] ?? "auto"
 }
 
-/// auto 不单列。统一内存达到 16GB 时显示 1.7B，否则显示 0.6B。
-public func readModelChoice(_ text: String, memory: UInt64) -> String {
+/// auto 不单列。按内存顺序选用本机已有目录里的第一份。
+public func resolvedAutoVariant(memory: UInt64, installedFolders: [String]) -> String {
+    let order = memory >= qwenLargeMemory ? qwenAutoLarge : qwenAutoSmall
+    let names = Set(installedFolders)
+    for key in order {
+        guard let item = modelCatalog.first(where: { $0.id == "qwen_asr:\(key)" }) else { continue }
+        if item.folders.contains(where: { names.contains($0) }) {
+            return key
+        }
+    }
+    return memory >= qwenLargeMemory ? "1.7b" : "0.6b"
+}
+
+public func installedQwenFolders(root: String, isDirectory: (String) -> Bool, containsFile: (String, String) -> Bool) -> [String] {
+    modelCatalog.flatMap { item in
+        item.folders.filter { folder in
+            directoryHasWeights(root + "/models/mlx/" + folder, isDirectory: isDirectory, containsFile: containsFile)
+        }
+    }
+}
+
+public func readModelChoice(_ text: String, memory: UInt64, installedFolders: [String] = []) -> String {
     let engine = readModelType(text)
     guard engine == "qwen_asr" else { return engine }
     let variant = readQwenVariant(text)
-    let size: String
-    if qwenVariants.contains(variant) {
-        size = variant
-    } else {
-        size = memory >= qwenLargeMemory ? "1.7b" : "0.6b"
-    }
+    let size = qwenVariants.contains(variant)
+        ? variant
+        : resolvedAutoVariant(memory: memory, installedFolders: installedFolders)
     return "qwen_asr:\(size)"
 }
 

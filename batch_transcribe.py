@@ -476,7 +476,8 @@ def record_loaded_model(started, config_text, path):
         return False
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(read_model_choice(config_text) + '\n', encoding='utf-8')
+    present = ready_qwen_dirs(target.resolve().parent.parent)
+    target.write_text(read_model_choice(config_text, present=present) + '\n', encoding='utf-8')
     return True
 
 
@@ -540,17 +541,18 @@ def apply_model_choice(
     """写入配置。引擎、规格变了，进程里还是旧模型，或配置比进程新，都要重启。"""
     path = ROOT / 'config_server.py' if config_path is None else Path(config_path)
     text = path.read_text(encoding='utf-8')
+    present = ready_qwen_dirs(path.parent)
     engine, variant = split_model_choice(model)
     current_engine = read_model_type(text)
     current_variant = read_qwen_variant(text)
     same_engine = engine == current_engine
     if variant is None or variant == current_variant:
         same_variant = True
-    elif current_variant == 'auto' and effective_qwen_variant('auto', memory) == variant:
+    elif current_variant == 'auto' and effective_qwen_variant('auto', memory, present) == variant:
         same_variant = same_engine
     else:
         same_variant = False
-    requested = menu_id_for(engine, variant if variant else current_variant, memory)
+    requested = menu_id_for(engine, variant if variant else current_variant, memory, present)
     label = model_label(requested)
     running = str(loaded_model or '').strip()
     loaded_differs = bool(server_up) and bool(running) and running != requested
@@ -560,7 +562,7 @@ def apply_model_choice(
         return False
     if not (same_engine and same_variant):
         path.write_text(write_model_choice(text, model), encoding='utf-8')
-        current_label = model_label(menu_id_for(current_engine, current_variant, memory))
+        current_label = model_label(menu_id_for(current_engine, current_variant, memory, present))
         print(f'模型从 {current_label} 换成 {label}。正在重启服务端。')
     elif loaded_differs:
         print(f'服务端仍是 {model_label(running)}，正在换成 {label}。')
@@ -1108,8 +1110,8 @@ def write_qwen_variant(text, variant):
     return updated
 
 
-def effective_qwen_variant(preference='auto', memory=None):
-    """auto 按统一内存选规格，规则和加载模型时相同。"""
+def effective_qwen_variant(preference='auto', memory=None, present=None):
+    """auto 按统一内存和本机目录选规格，规则和加载模型时相同。"""
     from core.server.engines.mlx.variant import MEMORY_16GB, select_qwen_variant
 
     if memory is None:
@@ -1118,8 +1120,16 @@ def effective_qwen_variant(preference='auto', memory=None):
             memory = int(psutil.virtual_memory().total)
         except Exception:
             memory = MEMORY_16GB
-    variant, _repo, _dirname = select_qwen_variant(preference, memory)
+    variant, _repo, _dirname = select_qwen_variant(preference, memory, present)
     return variant
+
+
+def ready_qwen_dirs(root=None):
+    """本机已经放好权重的 MLX 目录。没有 models/mlx 时返回空列表。"""
+    from core.server.engines.mlx.catalog import ready_dirs
+
+    base = ROOT if root is None else Path(root)
+    return ready_dirs(base / 'models' / 'mlx')
 
 
 def split_model_choice(choice):
@@ -1135,9 +1145,9 @@ def split_model_choice(choice):
     raise ValueError(f'不支持的模型: {choice}')
 
 
-def menu_id_for(engine, variant=None, memory=None):
+def menu_id_for(engine, variant=None, memory=None, present=None):
     if engine == 'qwen_asr':
-        size = variant if variant in _QWEN_VARIANTS else effective_qwen_variant(variant or 'auto', memory)
+        size = variant if variant in _QWEN_VARIANTS else effective_qwen_variant(variant or 'auto', memory, present)
         return f'qwen_asr:{size}'
     if engine in MODEL_IDS:
         return engine
@@ -1148,8 +1158,8 @@ def model_label(choice):
     return _MODEL_LABELS.get(choice, choice)
 
 
-def read_model_choice(text, memory=None):
-    return menu_id_for(read_model_type(text), read_qwen_variant(text), memory)
+def read_model_choice(text, memory=None, present=None):
+    return menu_id_for(read_model_type(text), read_qwen_variant(text), memory, present)
 
 
 def write_model_choice(text, choice):

@@ -150,7 +150,7 @@ Qwen 仓库选择放在工厂旁边的一个函数里，不写进每个引擎：
 
 - `1.7b`：`mlx-community/Qwen3-ASR-1.7B-8bit`
 - `0.6b`：`mlx-community/Qwen3-ASR-0.6B-8bit`
-- `auto`：`psutil` 看到的总内存大于等于 16GB 用 1.7B，否则 0.6B
+- `auto`：总内存大于等于 16GB 时按 1.7B 8bit、6bit、4bit、mxfp4，再 0.6B 同样四档，用本机已有权重的第一份。不到 16GB 时先 0.6B 再 1.7B
 - 加载 1.7B 出现内存错误时改 0.6B，日志写明，只重试一次
 
 `config_client.py` 增加一组 Darwin 值，Windows 默认值原样保留：
@@ -336,6 +336,10 @@ Windows 回归只看：`win32_event_filter` 还在，`DML` 会话参数没有被
 2026-10-27 版本 2.10.0。新增 `build-macos.sh` 和 `clean-macos.sh`。编译走 `macos_build.py`，默认 `build.spec`，参数 `client` 才走 `build-client.spec`。清理只删 `build` 和 `dist`；`dist` 若是指向仓库外的符号链接，只解开链接。`start_server` 或 `start_client` 还被占用时，清理和编译都直接退出。`/tmp/capswriter-macos-test/bin/python -m unittest discover -s tests -p 'test_*.py'`，93 项通过。这次重跑 `./build-macos.sh`，退出码 0。`dist/CapsWriter.app` 短版本 2.37.0。包内 MLX 只有 SenseVoiceSmall、Qwen3-ASR-0.6B-6bit、Qwen3-ASR-0.6B-mxfp4、Qwen3-ASR-1.7B-6bit、Qwen3-ASR-1.7B-4bit、Qwen3-ForcedAligner-0.6B-8bit，以及 `下载说明.txt`。菜单只列出本地已有权重，刷新后重新扫描。
 
 2026-10-28 版本 2.15.0。双击批量转录先显示窗口，再在后台准备服务端。左下角红灯还没好，黄灯正在准备，绿灯写 Ready。没绿灯时开始转录不会跑。地址栏和打开在准备期间仍可用。`/private/tmp/capswriter-macos-test/bin/python -m unittest tests.test_batch_transcribe tests.test_build_support`，27 项通过。`./build-macos.sh` 重新打出 08:03 的 arm64 `batch_transcribe`。
+
+2026-10-31 版本 2.37.2。`auto` 按内存分两条顺序，只用本机已有权重。16GB 及以上是 1.7B 8bit、6bit、4bit、mxfp4，再 0.6B 同样四档。不到 16GB 时先 0.6B 再 1.7B。菜单和配置摘要显示将要加载的那一档。写明规格时不往下找。capswriter 的 Python 跑 `tests.test_macos_port.QwenVariantTest tests.test_config_form.ConfigFormTest.test_auto_summary_follows_installed_weights tests.test_config_form.ConfigFormTest.test_server_summary_follows_the_batch_model_menu tests.test_build_support.BuildSupportTest.test_version_sources_match`，6 项通过。`tests.test_batch_transcribe.FormTest tests.test_macos_port.QwenVariantTest`，17 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift --filter testQwenMenuHasTwoSizesAndKeepsTheSavedLine`，1 项通过。发布版菜单换进 `/Applications/CapsWriter.app`。没有重跑 PyInstaller。
+
+2026-10-31 版本 2.37.1。`auto` 的真正加载也改看本机目录。安装包没有 1.7B 8bit 时，选出 `Qwen3-ASR-1.7B-6bit`，不再在 `load_qwen_with_fallback` 里固定要 8bit。capswriter 的 Python 跑 `tests.test_macos_port.QwenVariantTest`，3 项通过。同一份文件换进 `/Applications/CapsWriter.app`。没有重跑 PyInstaller。
 
 2026-10-31 版本 2.37.0。Qwen3-ASR 1.7B 和 0.6B 增加 6bit、4bit、mxfp4。菜单和 `qwen_mlx_variant` 可以写成 `1.7b-4bit`、`0.6b-6bit`、`1.7b-mxfp4` 这一类。`auto`、`1.7b`、`0.6b` 仍是 8bit。6bit 和 mxfp4 没有上游仓库，权重放在 `models/mlx/` 对应目录，不入库。Mac mini M4 16GB 上，播客前 600 秒、16 kHz、每 60 秒一段：SenseVoice 识别 3.34 秒、相对字错率 18.8%；Fun-ASR-Nano 31.08 秒、22.9%；0.6B 的 8/6/4/mxfp4 分别是 27.11 秒 2.6%、24.28 秒 2.8%、20.84 秒 5.8%、20.90 秒 3.9%；1.7B 的 8/6/4/mxfp4 分别是 61.36 秒 0%、51.28 秒 0.1%、39.90 秒 3.6%、38.60 秒 6.4%。字错率对照的是 1.7B 8bit，不是人工校对。capswriter 的 Python 跑 `tests.test_batch_transcribe.FormTest tests.test_macos_port.QwenVariantTest tests.test_build_support.BuildSupportTest.test_version_sources_match`，17 项通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift --filter testQwenMenuHasTwoSizesAndKeepsTheSavedLine`，1 项通过。没有重跑 PyInstaller。
 

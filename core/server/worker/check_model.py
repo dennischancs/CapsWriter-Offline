@@ -28,9 +28,11 @@ def mlx_required_dirs(model_type, platform, model_backend, preference='auto', to
     if model_type == 'fun_asr_nano':
         return [ModelPaths.mlx_fun_asr_dir]
     if model_type == 'qwen_asr':
+        from core.server.engines.mlx.catalog import ready_dirs
         from core.server.engines.mlx.variant import select_qwen_variant
-        _, _, dirname = select_qwen_variant(preference, total_memory)
-        return [ModelPaths.mlx_dir / dirname]
+        root = ModelPaths.mlx_dir
+        _, _, dirname = select_qwen_variant(preference, total_memory, ready_dirs(root))
+        return [root / dirname]
     return None
 
 

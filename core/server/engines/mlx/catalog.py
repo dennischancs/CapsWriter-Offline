@@ -43,6 +43,14 @@ def weights_present(path):
     return any(path.rglob('model.safetensors')) or any(path.rglob('*.onnx'))
 
 
+def ready_dirs(mlx_dir):
+    """只返回里面已经有权重的目录。空目录不算已安装。"""
+    root = Path(mlx_dir)
+    if not root.is_dir():
+        return []
+    return [path for path in root.iterdir() if weights_present(path)]
+
+
 def installed_choices(mlx_dir, paraformer_dir=None):
     root = Path(mlx_dir)
     found = []

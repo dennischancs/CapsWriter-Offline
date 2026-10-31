@@ -76,7 +76,13 @@ final class BatchModel: ObservableObject {
         }
         if let root {
             let config = (try? String(contentsOfFile: root + "/config_server.py", encoding: .utf8)) ?? ""
-            model = readModelChoice(config, memory: ProcessInfo.processInfo.physicalMemory)
+            let probe = Self.weightProbe()
+            let folders = installedQwenFolders(root: root, isDirectory: probe.isDirectory, containsFile: probe.containsFile)
+            model = readModelChoice(
+                config,
+                memory: ProcessInfo.processInfo.physicalMemory,
+                installedFolders: folders
+            )
             refreshModels()
         }
     }
@@ -86,22 +92,47 @@ final class BatchModel: ObservableObject {
             availableModels = []
             return
         }
-        let manager = FileManager.default
-        let found = installedModelChoices(root: root, isDirectory: { path in
-            var isDir: ObjCBool = false
-            return manager.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
-        }, containsFile: { folder, name in
-            if name == "*" {
-                guard let names = try? manager.contentsOfDirectory(atPath: folder) else { return false }
-                return names.contains { $0.hasSuffix(".onnx") || $0 == "model.safetensors" }
-                    || Self.nestedWeights(manager, folder)
-            }
-            return manager.fileExists(atPath: folder + "/" + name)
-        })
+        let probe = Self.weightProbe()
+        let found = installedModelChoices(root: root, isDirectory: probe.isDirectory, containsFile: probe.containsFile)
         availableModels = found
+        if let config = try? String(contentsOfFile: root + "/config_server.py", encoding: .utf8),
+           readModelType(config) == "qwen_asr",
+           readQwenVariant(config) == "auto" {
+            let folders = installedQwenFolders(
+                root: root,
+                isDirectory: probe.isDirectory,
+                containsFile: probe.containsFile
+            )
+            let resolved = readModelChoice(
+                config,
+                memory: ProcessInfo.processInfo.physicalMemory,
+                installedFolders: folders
+            )
+            if found.contains(where: { $0.id == resolved }) {
+                model = resolved
+                return
+            }
+        }
         if !found.contains(where: { $0.id == model }), let first = found.first {
             model = first.id
         }
+    }
+
+    private static func weightProbe() -> (isDirectory: (String) -> Bool, containsFile: (String, String) -> Bool) {
+        let manager = FileManager.default
+        let isDirectory = { (path: String) -> Bool in
+            var isDir: ObjCBool = false
+            return manager.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+        }
+        let containsFile = { (folder: String, name: String) -> Bool in
+            if name == "*" {
+                guard let names = try? manager.contentsOfDirectory(atPath: folder) else { return false }
+                return names.contains { $0.hasSuffix(".onnx") || $0 == "model.safetensors" }
+                    || nestedWeights(manager, folder)
+            }
+            return manager.fileExists(atPath: folder + "/" + name)
+        }
+        return (isDirectory, containsFile)
     }
 
     private static func nestedWeights(_ manager: FileManager, _ folder: String) -> Bool {

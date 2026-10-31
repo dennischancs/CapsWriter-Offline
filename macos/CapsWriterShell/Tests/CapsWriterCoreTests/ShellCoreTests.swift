@@ -98,6 +98,14 @@ final class ShellCoreTests: XCTestCase {
         let source = "    model_type = 'qwen_asr'\n    qwen_mlx_variant = 'auto'\n    port = '6016'\n"
         XCTAssertEqual(readModelChoice(source, memory: qwenLargeMemory), "qwen_asr:1.7b")
         XCTAssertEqual(readModelChoice(source, memory: qwenLargeMemory - 1), "qwen_asr:0.6b")
+        XCTAssertEqual(
+            readModelChoice(source, memory: qwenLargeMemory, installedFolders: ["Qwen3-ASR-1.7B-6bit", "Qwen3-ASR-0.6B-mxfp4"]),
+            "qwen_asr:1.7b-6bit"
+        )
+        XCTAssertEqual(
+            readModelChoice(source, memory: qwenLargeMemory - 1, installedFolders: ["Qwen3-ASR-1.7B-6bit", "Qwen3-ASR-0.6B-6bit"]),
+            "qwen_asr:0.6b-6bit"
+        )
         let small = "    model_type = 'qwen_asr'\n    qwen_mlx_variant = '0.6b'\n"
         XCTAssertEqual(readModelChoice(small, memory: qwenLargeMemory), "qwen_asr:0.6b")
         XCTAssertEqual(readModelChoice("    model_type = 'sensevoice'\n", memory: 1), "sensevoice")

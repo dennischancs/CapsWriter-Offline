@@ -251,7 +251,7 @@ def server_summary(fields, root, version, memory=None):
     values = _index(fields)
     engine = values['ServerConfig.model_type']['text']
     variant = values['ServerConfig.qwen_mlx_variant']['text']
-    shown_engine, shown_variant = shown_server_model(engine, variant, memory)
+    shown_engine, shown_variant = shown_server_model(engine, variant, memory, root)
     return [
         '版本：%s' % version,
         '项目地址：%s' % PROJECT_URL,
@@ -290,23 +290,30 @@ def _memory_bytes(memory, fallback):
         return fallback
 
 
-def shown_server_model(engine, variant, memory=None):
-    """和批量菜单用同一套算法。auto 展开成将要加载的 1.7b 或 0.6b。"""
+def shown_server_model(engine, variant, memory=None, root=None):
+    """和加载用同一套顺序。auto 展开成本机已有权重里的第一份。"""
     selector = _qwen_selector()
     explicit = tuple(selector.QWEN_VARIANTS)
     engines = ('sensevoice', 'fun_asr_nano', 'qwen_asr', 'paraformer')
     if engine == 'qwen_asr':
         if variant in explicit:
             return 'qwen_asr', variant
-        selector = _qwen_selector()
         size, _repo, _dirname = selector.select_qwen_variant(
             variant or 'auto',
             _memory_bytes(memory, selector.MEMORY_16GB),
+            _ready_qwen_dirs(root),
         )
         return 'qwen_asr', size
     if engine in engines:
         return engine, variant
     return 'sensevoice', variant
+
+
+def _ready_qwen_dirs(root):
+    if not root:
+        return None
+    from core.server.engines.mlx.catalog import ready_dirs
+    return ready_dirs(Path(root) / 'models' / 'mlx')
 
 
 def classify(node):
@@ -706,7 +713,7 @@ _STATIC_HELP = {
     ('ServerConfig', 'port'): '服务端监听端口。客户端要填同一个端口。',
     ('ServerConfig', 'model_type'): '用哪个语音模型。可以是 sensevoice、fun_asr_nano、qwen_asr、paraformer。',
     ('ServerConfig', 'model_backend'): 'auto 在 Mac 上走 MLX。onnx 强制现有引擎。mlx 强制 MLX，Paraformer 除外。',
-    ('ServerConfig', 'qwen_mlx_variant'): 'auto 按内存选 1.7B 8bit 或 0.6B 8bit。也可以写成 0.6b、1.7b，或 1.7b-4bit、1.7b-6bit、1.7b-mxfp4、0.6b-4bit、0.6b-6bit、0.6b-mxfp4。',
+    ('ServerConfig', 'qwen_mlx_variant'): 'auto 按内存依次选用本机已有的权重。16GB 及以上先 1.7B 的 8bit、6bit、4bit、mxfp4，再 0.6B 同样四档。不到 16GB 时先 0.6B 再 1.7B。写明 0.6b、1.7b 或带量化的名字时不往下找。',
     ('ServerConfig', 'mlx_auto_download'): '缺模型目录时是否下载。默认只报缺哪个目录，不下载。',
     ('ServerConfig', 'format_num'): '输出时是否把中文数字转成阿拉伯数字。',
     ('ServerConfig', 'format_spell'): '输出时是否调整中文和英文之间的空格。',
