@@ -1,5 +1,13 @@
 # 更新日志
 
+## v2.37.0
+
+- **Qwen 量化**：批量窗口里，Qwen3-ASR 1.7B 和 0.6B 都可以选 8bit、6bit、4bit、mxfp4。`auto` 仍按内存选 1.7B 或 0.6B 的 8bit。不带位数的 `1.7b`、`0.6b` 还是 8bit。推荐 1.7B 8bit 和 1.7B 6bit。
+- **只列出已有模型**：菜单只显示 `models` 里已经放好权重的项。放进新目录后点「刷新」。下载地址和 6bit、mxfp4 的转换命令在 `models/mlx/下载说明.txt`。
+- **速度和字错率**：Mac mini M4（16GB）上，播客前 10 分钟、16 kHz 单声道、每 60 秒一段。字错率对照同一段的 Qwen3-ASR 1.7B 8bit，不是人工校对。数字在 [readme.md](../readme.md) 的 macOS 一节。
+- **安装包**：`dist/CapsWriter.app` 短版本 2.37.0。里面的 MLX 只有 SenseVoice Small、Qwen3-ASR 0.6B 6bit、0.6B mxfp4、1.7B 6bit、1.7B 4bit，以及对齐器。
+- 验证：capswriter 环境的菜单和打包测试通过。`swift test --package-path macos/CapsWriterShell --disable-sandbox --scratch-path /tmp/cw-swift --filter testQwenMenuHasTwoSizesAndKeepsTheSavedLine`，1 项通过。`./build-macos.sh` 退出码 0。
+
 ## v2.36.0
 
 - **编译二选一**：`./build-macos.sh` 不带参数，只打出未签名的 `dist/CapsWriter.app`，不打 dmg。`./build-macos.sh dmg` 只打出 `dist/CapsWriter-2.36.0.dmg`，成功后旁边不再留下 app。打开后把 CapsWriter 拖到「应用程序」。`./build-macos.sh client` 仍只打客户端。两个参数不能一起写。

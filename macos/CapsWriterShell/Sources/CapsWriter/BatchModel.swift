@@ -19,6 +19,7 @@ final class BatchModel: ObservableObject {
     @Published var startServer = true
     @Published var stopServer = false
     @Published var model = "sensevoice"
+    @Published var availableModels: [(id: String, label: String)] = modelChoices
     @Published var logLevel = "INFO"
     @Published var lamp: Lamp = .red
     @Published var readyText = "还没准备好"
@@ -76,7 +77,39 @@ final class BatchModel: ObservableObject {
         if let root {
             let config = (try? String(contentsOfFile: root + "/config_server.py", encoding: .utf8)) ?? ""
             model = readModelChoice(config, memory: ProcessInfo.processInfo.physicalMemory)
+            refreshModels()
         }
+    }
+
+    func refreshModels() {
+        guard let root else {
+            availableModels = []
+            return
+        }
+        let manager = FileManager.default
+        let found = installedModelChoices(root: root, isDirectory: { path in
+            var isDir: ObjCBool = false
+            return manager.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+        }, containsFile: { folder, name in
+            if name == "*" {
+                guard let names = try? manager.contentsOfDirectory(atPath: folder) else { return false }
+                return names.contains { $0.hasSuffix(".onnx") || $0 == "model.safetensors" }
+                    || Self.nestedWeights(manager, folder)
+            }
+            return manager.fileExists(atPath: folder + "/" + name)
+        })
+        availableModels = found
+        if !found.contains(where: { $0.id == model }), let first = found.first {
+            model = first.id
+        }
+    }
+
+    private static func nestedWeights(_ manager: FileManager, _ folder: String) -> Bool {
+        guard let items = manager.enumerator(atPath: folder) else { return false }
+        for case let name as String in items {
+            if name.hasSuffix("model.safetensors") || name.hasSuffix(".onnx") { return true }
+        }
+        return false
     }
 
     func selectModel(_ choice: String) {
@@ -385,8 +418,8 @@ final class BatchModel: ObservableObject {
         stoppedByUser = false
         status = "正在换成所选模型"
         note("model switch")
-        let from = modelChoices.first { $0.id == loadedServerModel }?.label ?? loadedServerModel
-        let to = modelChoices.first { $0.id == model }?.label ?? model
+        let from = availableModels.first { $0.id == loadedServerModel }?.label ?? loadedServerModel
+        let to = availableModels.first { $0.id == model }?.label ?? model
         append("服务端仍是 \(from)，正在换成 \(to)。\n")
         stopBackground { [weak self] in
             self?.probePort(attempt: 0)

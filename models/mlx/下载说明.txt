@@ -1,0 +1,42 @@
+MLX 模型放在本目录。菜单只列出已经放好权重的文件夹。放进新目录后，在批量窗口点「刷新」。
+
+可以直接下载的：
+
+SenseVoiceSmall
+https://huggingface.co/mlx-community/SenseVoiceSmall
+
+Fun-ASR-Nano-2512
+https://huggingface.co/mlx-community/Fun-ASR-Nano-2512
+
+Qwen3-ASR-1.7B-8bit
+https://huggingface.co/mlx-community/Qwen3-ASR-1.7B-8bit
+
+Qwen3-ASR-1.7B-4bit
+https://huggingface.co/mlx-community/Qwen3-ASR-1.7B-4bit
+
+Qwen3-ASR-0.6B-8bit
+https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-8bit
+
+Qwen3-ASR-0.6B-4bit
+https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-4bit
+
+Qwen3-ForcedAligner-0.6B-8bit
+https://huggingface.co/mlx-community/Qwen3-ForcedAligner-0.6B-8bit
+
+文件字幕需要对齐器。没有它时，字幕时间会退回按字均分。
+
+6bit 和 mxfp4 没有现成仓库。先按下面对应的 8bit，再在仓库根目录转换。目标目录已存在时不会覆盖。音频编码器保持原来的精度。
+
+0.6B 6bit：
+python -m core.server.engines.mlx.quantize models/mlx/Qwen3-ASR-0.6B-8bit 6bit models/mlx/Qwen3-ASR-0.6B-6bit
+
+0.6B mxfp4：
+python -m core.server.engines.mlx.quantize models/mlx/Qwen3-ASR-0.6B-8bit mxfp4 models/mlx/Qwen3-ASR-0.6B-mxfp4
+
+1.7B 6bit：
+python -m core.server.engines.mlx.quantize models/mlx/Qwen3-ASR-1.7B-8bit 6bit models/mlx/Qwen3-ASR-1.7B-6bit
+
+1.7B mxfp4：
+python -m core.server.engines.mlx.quantize models/mlx/Qwen3-ASR-1.7B-8bit mxfp4 models/mlx/Qwen3-ASR-1.7B-mxfp4
+
+用的是本机 capswriter 环境里的 Python，系统自带的 python3 没有 MLX。转换要有 Metal，沙箱里跑不了。

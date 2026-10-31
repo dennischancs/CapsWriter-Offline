@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.34.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.37.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -62,6 +62,7 @@
 - [x] 2.34.0 批量窗口点停止马上中断，和命令行 Ctrl+C 一样。已经写好的字幕留下，后面的文件不再开始。日志贴底时跟着最新一行，往上翻就停住，窗口可以拖动。上面显示当前第几个、一共几个，跳过的不算。
 - [x] 2.35.0 中断后再开始会重新遍历，已经写好的同名 `.srt` 不复写。空的或没有时间轴的半截不算做完，下次继续做。只有勾上「已有字幕也重做」才会覆盖成品。
 - [x] 2.36.0 不带参数的 `./build-macos.sh` 只打出 `dist/CapsWriter.app`。`./build-macos.sh dmg` 只打出 `dist/CapsWriter-<version>.dmg`，成功后旁边不再留下 app。两个参数不能一起写。
+- [x] 2.37.0 批量窗口的 Qwen3-ASR 可以选 1.7B 或 0.6B 的 8bit、6bit、4bit、mxfp4。`auto` 仍是对应体积的 8bit。菜单只列出本机已经放好权重的项，点「刷新」后重新列出。同一段 10 分钟音频上，readme 记下加载、识别、RTF，以及相对 1.7B 8bit 的字错率，并推荐 1.7B 8bit 和 6bit。
 - [x] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [x] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限、并且列不出任何输入设备时，提示去系统设置，进程不崩溃。默认输入编号是 -1、但还能列出输入设备时，日志写出这些编号，约 2 秒打不开就跳过，不把这件事说成没有麦克风权限。没有辅助功能权限时文字留在系统通知和终端里，不上屏。
 
@@ -181,14 +182,15 @@ Paraformer 和 CT-Transformer 标点没有可接入的 Python MLX 实现。它�
 | --- | --- | --- |
 | `sensevoice` | `models/mlx/SenseVoiceSmall` | `mlx-community/SenseVoiceSmall` |
 | `fun_asr_nano` | `models/mlx/Fun-ASR-Nano-2512` | `mlx-community/Fun-ASR-Nano-2512` |
-| `qwen_asr` | `models/mlx/Qwen3-ASR-1.7B-8bit` 或 `...-0.6B-8bit` | 同名 mlx-community 仓库 |
+| `qwen_asr` | `models/mlx/Qwen3-ASR-1.7B-8bit`、`...-0.6B-8bit`，以及同名的 6bit、4bit、mxfp4 目录 | 8bit 和 4bit 有 mlx-community 仓库。6bit、mxfp4 由本地 8bit 再量化 |
 | 对齐器 | `models/mlx/Qwen3-ForcedAligner-0.6B-8bit` | `mlx-community/Qwen3-ForcedAligner-0.6B-8bit` |
 
 选择规则：
 
-- 用户把 `qwen_mlx_variant` 写成 `0.6b` 或 `1.7b` 时，照做。
-- 批量窗口把 Qwen3-ASR 分成 1.7B 和 0.6B。选中后马上写入 `model_type = qwen_asr` 和对应的 `qwen_mlx_variant`。`auto` 不单列；窗口显示按内存会加载的那一个。server 标签重读这份配置，摘要和表单都换成刚选的模型和规格。client 标签没有这两项。
+- 用户把 `qwen_mlx_variant` 写成 `0.6b`、`1.7b`，或带量化的 `1.7b-4bit`、`0.6b-6bit`、`1.7b-mxfp4` 时，照做。不带位数的旧名字仍是 8bit。
+- 批量窗口把 Qwen3-ASR 分成 1.7B 和 0.6B，每一档再选 8bit、6bit、4bit、mxfp4。选中后马上写入 `model_type = qwen_asr` 和对应的 `qwen_mlx_variant`。`auto` 不单列；窗口显示按内存会加载的 8bit。server 标签重读这份配置，摘要和表单都换成刚选的模型和规格。client 标签没有这两项。
 - `auto`：统一内存大于等于 16GB 用 1.7B 8bit，否则 0.6B 8bit。
+- 6bit 和 mxfp4 没有上游仓库，目录要事先放在 `models/mlx/`。缺目录时写明缺哪一个，不在启动时现量化。
 - 1.7B 因内存加载失败时，同一进程改加载 0.6B，只重试一次。
 - 麦克风不加载对齐器。文件任务才加载，闲置后按现有 `aligner_idle_timeout` 卸掉，并清 MLX 缓存。
 - 不要同时常驻同一模型的 ONNX 和 MLX 两份。

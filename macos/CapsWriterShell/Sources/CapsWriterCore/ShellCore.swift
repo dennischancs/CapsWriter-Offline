@@ -1,14 +1,26 @@
 import Foundation
 
-public let modelChoices: [(id: String, label: String)] = [
-    ("sensevoice", "SenseVoice Small"),
-    ("fun_asr_nano", "Fun-ASR Nano"),
-    ("qwen_asr:1.7b", "Qwen3-ASR 1.7B"),
-    ("qwen_asr:0.6b", "Qwen3-ASR 0.6B"),
-    ("paraformer", "Paraformer"),
+public let modelCatalog: [(id: String, label: String, folders: [String])] = [
+    ("sensevoice", "SenseVoice Small", ["SenseVoiceSmall"]),
+    ("fun_asr_nano", "Fun-ASR Nano", ["Fun-ASR-Nano-2512"]),
+    ("qwen_asr:1.7b", "Qwen3-ASR 1.7B 8bit", ["Qwen3-ASR-1.7B-8bit"]),
+    ("qwen_asr:1.7b-6bit", "Qwen3-ASR 1.7B 6bit", ["Qwen3-ASR-1.7B-6bit"]),
+    ("qwen_asr:1.7b-4bit", "Qwen3-ASR 1.7B 4bit", ["Qwen3-ASR-1.7B-4bit"]),
+    ("qwen_asr:1.7b-mxfp4", "Qwen3-ASR 1.7B mxfp4", ["Qwen3-ASR-1.7B-mxfp4"]),
+    ("qwen_asr:0.6b", "Qwen3-ASR 0.6B 8bit", ["Qwen3-ASR-0.6B-8bit"]),
+    ("qwen_asr:0.6b-6bit", "Qwen3-ASR 0.6B 6bit", ["Qwen3-ASR-0.6B-6bit"]),
+    ("qwen_asr:0.6b-4bit", "Qwen3-ASR 0.6B 4bit", ["Qwen3-ASR-0.6B-4bit"]),
+    ("qwen_asr:0.6b-mxfp4", "Qwen3-ASR 0.6B mxfp4", ["Qwen3-ASR-0.6B-mxfp4"]),
+    ("paraformer", "Paraformer", ["Paraformer"]),
 ]
 
+public let modelChoices = modelCatalog.map { (id: $0.id, label: $0.label) }
+
 public let modelIDs = ["sensevoice", "fun_asr_nano", "qwen_asr", "paraformer"]
+public let qwenVariants = [
+    "1.7b", "1.7b-8bit", "1.7b-6bit", "1.7b-4bit", "1.7b-mxfp4",
+    "0.6b", "0.6b-8bit", "0.6b-6bit", "0.6b-4bit", "0.6b-mxfp4",
+]
 public let qwenLargeMemory: UInt64 = 16 * 1024 * 1024 * 1024
 public let logLevels = ["DEBUG", "INFO", "WARNING", "ERROR"]
 public let homebrewPython = "/opt/homebrew/Caskroom/miniforge/base/envs/capswriter/bin/python3"
@@ -343,6 +355,25 @@ public func resolvePython(environment: String?, isExecutable: (String) -> Bool) 
     return "python3"
 }
 
+public func directoryHasWeights(_ path: String, isDirectory: (String) -> Bool, containsFile: (String, String) -> Bool) -> Bool {
+    if !isDirectory(path) { return false }
+    let names = ["model.safetensors", "model.onnx", "model.int8.onnx", "encoder.onnx"]
+    if names.contains(where: { containsFile(path, $0) }) { return true }
+    return containsFile(path, "*")
+}
+
+/// 只返回本地已经放好权重的项。Paraformer 看 models/Paraformer，其余看 models/mlx。
+public func installedModelChoices(root: String, isDirectory: (String) -> Bool, containsFile: (String, String) -> Bool) -> [(id: String, label: String)] {
+    modelCatalog.filter { item in
+        if item.id == "paraformer" {
+            return directoryHasWeights(root + "/models/Paraformer", isDirectory: isDirectory, containsFile: containsFile)
+        }
+        return item.folders.contains { folder in
+            directoryHasWeights(root + "/models/mlx/" + folder, isDirectory: isDirectory, containsFile: containsFile)
+        }
+    }.map { (id: $0.id, label: $0.label) }
+}
+
 public func acceptsModelArgument(_ model: String) -> Bool {
     if modelChoices.contains(where: { $0.id == model }) { return true }
     return modelIDs.contains(model)
@@ -358,16 +389,20 @@ public func readModelType(_ text: String) -> String {
 
 public func readQwenVariant(_ text: String) -> String {
     guard let found = firstCapture(
-        "(?m)^[ \t]*qwen_mlx_variant\\s*=\\s*['\"]([A-Za-z0-9_.]+)['\"]",
+        "(?m)^[ \t]*qwen_mlx_variant\\s*=\\s*['\"]([A-Za-z0-9_.-]+)['\"]",
         in: text
     ) else {
         return "auto"
     }
-    switch found.lowercased() {
-    case "1.7b", "1.7": return "1.7b"
-    case "0.6b", "0.6": return "0.6b"
-    default: return "auto"
-    }
+    let aliases = [
+        "1.7": "1.7b", "1.7b": "1.7b",
+        "1.7b-8bit": "1.7b-8bit", "1.7b-6bit": "1.7b-6bit",
+        "1.7b-4bit": "1.7b-4bit", "1.7b-mxfp4": "1.7b-mxfp4",
+        "0.6": "0.6b", "0.6b": "0.6b",
+        "0.6b-8bit": "0.6b-8bit", "0.6b-6bit": "0.6b-6bit",
+        "0.6b-4bit": "0.6b-4bit", "0.6b-mxfp4": "0.6b-mxfp4",
+    ]
+    return aliases[found.lowercased()] ?? "auto"
 }
 
 /// auto 不单列。统一内存达到 16GB 时显示 1.7B，否则显示 0.6B。
@@ -376,10 +411,9 @@ public func readModelChoice(_ text: String, memory: UInt64) -> String {
     guard engine == "qwen_asr" else { return engine }
     let variant = readQwenVariant(text)
     let size: String
-    switch variant {
-    case "1.7b", "0.6b":
+    if qwenVariants.contains(variant) {
         size = variant
-    default:
+    } else {
         size = memory >= qwenLargeMemory ? "1.7b" : "0.6b"
     }
     return "qwen_asr:\(size)"
@@ -399,10 +433,10 @@ public func writeModelType(_ text: String, model: String) throws -> String {
 }
 
 public func writeQwenVariant(_ text: String, variant: String) throws -> String {
-    guard variant == "1.7b" || variant == "0.6b" else {
+    guard qwenVariants.contains(variant) else {
         throw ShellError.unsupportedModel(variant)
     }
-    let pattern = #"(?m)^([ \t]*qwen_mlx_variant\s*=\s*['"])[A-Za-z0-9_.]+(['"])"#
+    let pattern = #"(?m)^([ \t]*qwen_mlx_variant\s*=\s*['"])[A-Za-z0-9_.-]+(['"])"#
     let regex = try NSRegularExpression(pattern: pattern)
     let range = NSRange(text.startIndex..., in: text)
     if regex.numberOfMatches(in: text, range: range) != 1 {
@@ -420,7 +454,7 @@ public func writeModelChoice(_ text: String, choice: String) throws -> String {
     var updated = try writeModelType(text, model: engine)
     if parts.count == 2 {
         let variant = parts[1]
-        guard engine == "qwen_asr", variant == "1.7b" || variant == "0.6b" else {
+        guard engine == "qwen_asr", qwenVariants.contains(variant) else {
             throw ShellError.unsupportedModel(choice)
         }
         updated = try writeQwenVariant(updated, variant: variant)

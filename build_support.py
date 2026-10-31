@@ -78,6 +78,24 @@ def _discard(path):
     remove(path)
 
 
+def _ignore_unpacked_mlx(folder, names):
+    """安装包只带指定的 MLX 目录。其余模型留在仓库里。"""
+    if basename(folder) != 'mlx':
+        return set()
+    allowed = {
+        'SenseVoiceSmall',
+        'Qwen3-ASR-0.6B-6bit',
+        'Qwen3-ASR-0.6B-mxfp4',
+        'Qwen3-ASR-1.7B-6bit',
+        'Qwen3-ASR-1.7B-4bit',
+        'Qwen3-ForcedAligner-0.6B-8bit',
+    }
+    return {
+        name for name in names
+        if name not in allowed and not name.startswith('.') and isdir(join(folder, name))
+    }
+
+
 def copy_runtime_folders(dest_root, folders=None, platform_name=None, empty_folders=None):
     """Darwin 上复制真实目录。缺的跳过。logs 只建空目录，不把开发机日志打进去。"""
     if not is_darwin(platform_name):
@@ -93,7 +111,8 @@ def copy_runtime_folders(dest_root, folders=None, platform_name=None, empty_fold
             folder,
             dest_folder,
             symlinks=False,
-            ignore=ignore_patterns('__pycache__', '*.pyc', '.DS_Store'),
+            ignore=lambda src, items: ignore_patterns('__pycache__', '*.pyc', '.DS_Store')(src, items)
+            | _ignore_unpacked_mlx(src, items),
         )
         copied.append(dest_folder)
     blanks = DARWIN_EMPTY_FOLDERS if empty_folders is None else empty_folders

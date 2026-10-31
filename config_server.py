@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 # 版本信息
-__version__ = '2.36.0'
+__version__ = '2.37.0'
 
 # 项目根目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +18,8 @@ class ServerConfig:
     # auto：Darwin 上 SenseVoice / Fun / Qwen 走 MLX，Windows 仍走现有引擎。
     # onnx：连 Darwin 也走现有 ONNX / GGUF。mlx：强制 MLX（Paraformer 除外）。
     model_backend = 'auto'
-    # auto：统一内存 >= 16GB 用 1.7B 8bit，否则 0.6B。也可写成 '0.6b' 或 '1.7b'。
+    # auto：统一内存 >= 16GB 用 1.7B 8bit，否则 0.6B 8bit。
+    # 也可写成 0.6b、1.7b，或带量化的 1.7b-4bit、1.7b-6bit、1.7b-mxfp4、0.6b-4bit、0.6b-6bit、0.6b-mxfp4。
     qwen_mlx_variant = 'auto'
     mlx_auto_download = False   # 缺目录时报目录名。需要时再打开下载
 

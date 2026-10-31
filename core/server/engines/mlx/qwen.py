@@ -38,7 +38,7 @@ class QwenMLXEngine(BaseASREngine):
 
         self.model, variant, fell_back = load_qwen_with_fallback(preference, memory, loader)
         if fell_back:
-            logger.warning('1.7B 加载失败，改用 0.6B')
+            logger.warning('1.7B 加载失败，改用 0.6B 8bit')
 
     @property
     def capabilities(self) -> List[EngineCapabilities]:

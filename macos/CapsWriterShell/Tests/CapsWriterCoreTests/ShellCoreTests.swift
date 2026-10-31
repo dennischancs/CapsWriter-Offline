@@ -80,8 +80,21 @@ final class ShellCoreTests: XCTestCase {
 
     func testQwenMenuHasTwoSizesAndKeepsTheSavedLine() throws {
         XCTAssertEqual(modelChoices.map(\.label), [
-            "SenseVoice Small", "Fun-ASR Nano", "Qwen3-ASR 1.7B", "Qwen3-ASR 0.6B", "Paraformer",
+            "SenseVoice Small", "Fun-ASR Nano",
+            "Qwen3-ASR 1.7B 8bit", "Qwen3-ASR 1.7B 6bit", "Qwen3-ASR 1.7B 4bit", "Qwen3-ASR 1.7B mxfp4",
+            "Qwen3-ASR 0.6B 8bit", "Qwen3-ASR 0.6B 6bit", "Qwen3-ASR 0.6B 4bit", "Qwen3-ASR 0.6B mxfp4",
+            "Paraformer",
         ])
+        let root = "/tmp/cw-models"
+        let present = [
+            root + "/models/mlx/SenseVoiceSmall",
+            root + "/models/mlx/Qwen3-ASR-0.6B-6bit",
+            root + "/models/mlx/Qwen3-ASR-1.7B-4bit",
+        ]
+        let shown = installedModelChoices(root: root, isDirectory: { present.contains($0) }, containsFile: { folder, name in
+            present.contains(folder) && name == "model.safetensors"
+        })
+        XCTAssertEqual(shown.map(\.id), ["sensevoice", "qwen_asr:1.7b-4bit", "qwen_asr:0.6b-6bit"])
         let source = "    model_type = 'qwen_asr'\n    qwen_mlx_variant = 'auto'\n    port = '6016'\n"
         XCTAssertEqual(readModelChoice(source, memory: qwenLargeMemory), "qwen_asr:1.7b")
         XCTAssertEqual(readModelChoice(source, memory: qwenLargeMemory - 1), "qwen_asr:0.6b")
@@ -103,6 +116,9 @@ final class ShellCoreTests: XCTestCase {
         let engineOnly = try writeModelChoice(written, choice: "sensevoice")
         XCTAssertTrue(engineOnly.contains("model_type = 'sensevoice'"))
         XCTAssertTrue(engineOnly.contains("qwen_mlx_variant = '0.6b'"))
+        let fourBit = try writeModelChoice(source, choice: "qwen_asr:0.6b-4bit")
+        XCTAssertTrue(fourBit.contains("qwen_mlx_variant = '0.6b-4bit'"))
+        XCTAssertEqual(readModelChoice(fourBit, memory: qwenLargeMemory), "qwen_asr:0.6b-4bit")
         XCTAssertThrowsError(try writeModelChoice(source, choice: "qwen_asr:9b"))
     }
 

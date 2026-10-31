@@ -92,20 +92,28 @@ LOG_RANK = {name: index for index, name in enumerate(LOG_LEVELS)}
 MODEL_CHOICES = (
     ('sensevoice', 'SenseVoice Small'),
     ('fun_asr_nano', 'Fun-ASR Nano'),
-    ('qwen_asr:1.7b', 'Qwen3-ASR 1.7B'),
-    ('qwen_asr:0.6b', 'Qwen3-ASR 0.6B'),
+    ('qwen_asr:1.7b', 'Qwen3-ASR 1.7B 8bit'),
+    ('qwen_asr:1.7b-6bit', 'Qwen3-ASR 1.7B 6bit'),
+    ('qwen_asr:1.7b-4bit', 'Qwen3-ASR 1.7B 4bit'),
+    ('qwen_asr:1.7b-mxfp4', 'Qwen3-ASR 1.7B mxfp4'),
+    ('qwen_asr:0.6b', 'Qwen3-ASR 0.6B 8bit'),
+    ('qwen_asr:0.6b-6bit', 'Qwen3-ASR 0.6B 6bit'),
+    ('qwen_asr:0.6b-4bit', 'Qwen3-ASR 0.6B 4bit'),
+    ('qwen_asr:0.6b-mxfp4', 'Qwen3-ASR 0.6B mxfp4'),
     ('paraformer', 'Paraformer'),
 )
 MENU_IDS = tuple(item[0] for item in MODEL_CHOICES)
 MODEL_IDS = ('sensevoice', 'fun_asr_nano', 'qwen_asr', 'paraformer')
-MODEL_ARGUMENTS = (
-    'sensevoice', 'fun_asr_nano', 'qwen_asr',
-    'qwen_asr:1.7b', 'qwen_asr:0.6b', 'paraformer',
+_QWEN_VARIANTS = (
+    '1.7b', '1.7b-8bit', '1.7b-6bit', '1.7b-4bit', '1.7b-mxfp4',
+    '0.6b', '0.6b-8bit', '0.6b-6bit', '0.6b-4bit', '0.6b-mxfp4',
 )
+MODEL_ARGUMENTS = (
+    'sensevoice', 'fun_asr_nano', 'qwen_asr', 'paraformer',
+) + tuple('qwen_asr:' + item for item in _QWEN_VARIANTS)
 _MODEL_LABELS = {key: label for key, label in MODEL_CHOICES}
-_QWEN_VARIANTS = ('1.7b', '0.6b')
 _VARIANT_RE = re.compile(
-    r"""(?m)^(?P<indent>[ \t]*qwen_mlx_variant\s*=\s*)(?P<quote>['\"])(?P<value>[A-Za-z0-9_.]+)(?P=quote)"""
+    r"""(?m)^(?P<indent>[ \t]*qwen_mlx_variant\s*=\s*)(?P<quote>['\"])(?P<value>[A-Za-z0-9_.-]+)(?P=quote)"""
 )
 PART_MARK = '.capswriter-part-'
 CLOSE_TRAY = 'tray'
@@ -1075,13 +1083,14 @@ def save_model_type(path, model, choices=MODEL_IDS):
 
 
 def read_qwen_variant(text):
-    """读 Qwen 规格。没有这一行时按 auto。"""
+    """读 Qwen 规格。没有这一行时按 auto。旧的 1.7 / 0.6 仍认成 8bit。"""
+    from core.server.engines.mlx.variant import normalize_qwen_variant
+
     match = _VARIANT_RE.search(text or '')
     found = match.group('value').lower() if match else 'auto'
-    if found in ('1.7b', '1.7'):
-        return '1.7b'
-    if found in ('0.6b', '0.6'):
-        return '0.6b'
+    variant = normalize_qwen_variant(found)
+    if variant in _QWEN_VARIANTS:
+        return variant
     return 'auto'
 
 
@@ -1114,7 +1123,7 @@ def effective_qwen_variant(preference='auto', memory=None):
 
 
 def split_model_choice(choice):
-    """菜单值可以是 qwen_asr:1.7b。旧的 qwen_asr 不改规格。"""
+    """菜单值可以是 qwen_asr:1.7b-4bit。旧的 qwen_asr 不改规格。"""
     text = str(choice or '').strip()
     if text in MENU_IDS and ':' in text:
         engine, variant = text.split(':', 1)
@@ -1144,7 +1153,7 @@ def read_model_choice(text, memory=None):
 
 
 def write_model_choice(text, choice):
-    """Qwen 的两个菜单项同时写 model_type 和 qwen_mlx_variant。其它模型只写引擎。"""
+    """Qwen 的菜单项同时写 model_type 和 qwen_mlx_variant。其它模型只写引擎。"""
     engine, variant = split_model_choice(choice)
     updated = write_model_type(text, engine)
     if variant:
@@ -1791,7 +1800,7 @@ def run_gui(root=None, prepare=None, schedule_updates=None, model=None) -> int:
             )
             level_box.pack(side='left', padx=6)
             if tips:
-                self._tips.append(_HoverTip(model_box, 'Qwen3-ASR 可选 1.7B 或 0.6B。下次开始前写入配置并重启服务端。正在转录时不能换。'))
+                self._tips.append(_HoverTip(model_box, 'Qwen3-ASR 可选 1.7B、0.6B，以及 8bit、6bit、4bit、mxfp4。下次开始前写入配置并重启服务端。正在转录时不能换。'))
                 self._tips.append(_HoverTip(level_box, '窗口里显示到哪一级。DEBUG 最详细，ERROR 只留错误。发送进度和转录进度各自只占一行，数字从 0、60、120 改到这段音频结束。'))
 
             checks = (

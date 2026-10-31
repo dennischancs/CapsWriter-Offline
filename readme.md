@@ -55,7 +55,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 - [模型对比](模型对比.md) — 这台 Mac mini M4 上四个 MLX 模型的耗时、字错率和 GPU 占用，没有录音正文
 - [优化计划](优化计划.md) — SenseVoice Small 要把字错率收到 10% 以内；神经引擎只做一次对照，不拿它提精度
 
-当前版本是 `2.36.0`，只认 `pyproject.toml`。
+当前版本是 `2.37.0`，只认 `pyproject.toml`。
 
 
 ## 💻 平台支持
@@ -63,7 +63,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 目前保证：
 
 - **Windows 10/11 (64位)**：DirectML、CapsLock 长按抑制，和原来一样。
-- **Apple Silicon（M 系列）**：可以从源码跑。默认按住右 Option 说话，松开后粘贴上屏。SenseVoice、Fun-ASR-Nano、Qwen3-ASR 和对齐器走 MLX，Metal 由 MLX 使用。Paraformer 和标点可以试 CoreML。Intel Mac 除外。打开客户端会带起没在跑的服务端；再打开一次不会再加载一份模型。不带参数运行 `./build-macos.sh`，只打出未签名的 `dist/CapsWriter.app`，不打 dmg。Swift 界面、服务端、批量转录和复制进去的模型都在这个 app 里，不是指回仓库的符号链接。要安装盘就运行 `./build-macos.sh dmg`，只打出 `dist/CapsWriter-2.36.0.dmg`，成功后旁边不再留下 app。打开 dmg，把 CapsWriter 拖到「应用程序」。`./build-macos.sh client` 只打客户端，不组装 app，也不打 dmg。两个参数不能一起写。清理运行 `./clean-macos.sh`，一次删掉 `build`、`dist`、Swift 的 `.build` 和 `/tmp/cw-swift`。仓库里的 `models` 不动。这些程序还在跑时不删，也不开始编译。系统自带的 `python3` 不够。`./build-macos.sh` 用本机 miniforge 的 `capswriter` 环境，这个环境里要有 PyInstaller。菜单栏由这个 app 提供。默认模型是 SenseVoice Small，走 MLX 的 GPU。批量转录在收集目录运行 `./batch_transcribe` 打开窗口，或 `./batch_transcribe 文件夹` 直接转。源码是 `python batch_transcribe.py`。地址栏可以粘贴，也可以从 Finder 拖入一个文件或文件夹。窗口里可以选日志等级，也可以在 SenseVoice Small、Fun-ASR Nano、Qwen3-ASR 1.7B、Qwen3-ASR 0.6B、Paraformer 之间换模型。一换就写入服务端配置。server 标签「现在这样跑」里的模型和 Qwen 规格，跟批量菜单显示的是同一个值：`auto` 按内存展开成 1.7b 或 0.6b，选了具体规格就显示那个规格。client 标签没有模型项，不跟着变。下次开始转录前，如果服务端进程里还是上一个模型，会先停掉再拉起。配置文件已经改过也一样。字幕写好后状态离开「转录中」。第一次关闭会问缩小到菜单栏还是退出，选过一次不再问。退出会停掉后台服务端。日志行前面是 `[年-月-日 时:分:秒.毫秒]`。点停止会马上中断这一轮，已经写好的字幕留下，后面的文件不再开始；再点一次强制结束。本来就开着的服务端不会被卸掉。日志贴在底部时跟着最新一行，往上翻就停住，窗口可以照常拖动。批量进行时显示当前第几个、一共几个，跳过的文件不算进去。已经写好的同名 `.srt` 会跳过，不复写。空的或没写完的下次再做。中断后重新开始会再遍历，已有成品保持原样，只从未做完的文件继续。没有成品则生成 `.srt`、`.txt` 和 `.json`。超过 2 小时的文件先按 2 小时切开，再合并成这三份。不做签名公证。
+- **Apple Silicon（M 系列）**：从源码跑，或打开 `dist/CapsWriter.app`。用法见下面的 [macOS](#-macos)。Intel Mac 除外。
 - **Linux**：暂无环境进行测试和打包，无法保证兼容性。
 
 [LazyTyper](https://lazytyper.com/) 和 [闪电说](https://shandianshuo.cn/) 也是很优秀的作品，都有离线引擎，都支持 Windows Linux 与 MacOS，并都有漂亮的图形化页面，推荐使用。
@@ -76,19 +76,32 @@ CapsWriter 的特别之处在于追求：
 - 高度自定义的热词系统
 
 
-## macOS 上为什么不用 Tk
+## 🍎 macOS
 
-macOS 上的菜单栏、权限、右 Option、粘贴和批量窗口用 Swift 写。同一个窗口里，批量转换是首页，另外两个标签叫 client 和 server，能改 `config_client.py` 和 `config_server.py` 里的全部设置。推荐值是灰的，双击并确认后才能改。识别仍是现在的 Python `start_server`，走 `127.0.0.1:6016`。Mac 上不再装 `tkhtmlview`、`tkinterdnd2`，也不再为提示窗口装 `python-tk`。不带参数运行 `batch_transcribe.py` 不会打开 Tk，要打开 `dist/CapsWriter.app`。Windows 的 Tk 提示还在。
+只支持 Apple Silicon。识别走 MLX / Metal。Intel Mac 除外。
 
-慢的不是模型。SenseVoice、Fun-ASR、Qwen3-ASR 在 Apple Silicon 上仍走 MLX / Metal，Swift 不重写识别。差在界面。在 macOS 上，Tk 不能一点就开，跑起来还会卡死。Swift 的窗口先出来，转录时菜单和按钮也还能动。
+1. 权重放在 `models/mlx/`。下载地址和 6bit、mxfp4 的转换命令在 `models/mlx/下载说明.txt`。
+2. 打包：`./build-macos.sh` 得到未签名的 `dist/CapsWriter.app`。`./build-macos.sh dmg` 得到安装盘，打开后拖到「应用程序」。两个参数不要一起写。
+3. 打开 app。按住右 Option 说话，松开后粘贴上屏。第一次会带起服务端，再开一次不会再加载一份模型。
+4. 批量转录在 app 里选文件或文件夹。菜单只列出本机已经放好的模型。放进新目录后点「刷新」。换了会写入 `config_server.py`，下次开始前如果服务端还是旧模型，会先停再开。
+5. 默认 `qwen_mlx_variant = 'auto'`：16GB 及以上用 1.7B 8bit，否则用 0.6B 8bit。要指定量化就写成 `1.7b-8bit`、`1.7b-6bit`、`0.6b-mxfp4` 这样。
 
-Tk 是 Python 的 `tkinter`，底下是 Tcl/Tk。Mac 上它不走系统自己的界面，要再套一层 Aqua，经 `_tkinter` 跟 Python 说话。Homebrew 的 Python 还要另装 `python-tk`，否则提示窗口起不来。进程得先把 Python 和这套库拉起来，窗口才可能出现。服务端若正在加载模型，准备又和画窗口挤在同一条主线程上，界面要等模型好了才看得到。后来改成先把窗口画出来，灯先是黄的，开始要等绿灯。即便这样，也要等 Python 和 Tk 就绪，做不到瞬间打开。
+已经写好的同名 `.srt` 会跳过。点停止会留下已完成的文件。超过 2 小时的文件会先切开再合并。app 未签名、未公证。文件转录需要 [ffmpeg](https://ffmpeg.org/download.html)。
 
-Swift 用的是系统自己的 AppKit / SwiftUI。启动时先把窗口放到前面，再去准备服务端。模型还在加载时窗口已经在。重画、关闭和菜单栏都在系统界面上，不跟识别挤在一起。
+这台 Mac mini M4（16GB）上，2026-10-31 测了一段播客的前 10 分钟。音频转成 16 kHz 单声道，每 60 秒一段、不重叠。识别耗时不含加载。RTF 是识别耗时除以 600 秒。字错率对照的是同一段上 Qwen3-ASR 1.7B 8bit 的结果，去掉标点和空白之后按字计算，不是人工校对。所以 1.7B 8bit 这一行是 0。6bit、4bit 和 mxfp4 都是从 8bit 再量化的，误差里包含第二次量化。推荐用加粗的 **1.7B 8bit** 和 **1.7B 6bit**：前者作为对照，后者几乎一样，识别更快。
 
-跑起来卡死，是因为 macOS 只允许主线程碰 Tk。转录若在别的线程里改窗口，状态会停在「转录中」，关闭也没反应。后来改成工作线程只把结果放进队列，主线程再关掉窗口。菜单栏也要这条主线程，不能再开第二套事件循环。菜单栏和 Tk 不能放在同一个进程里，所以菜单还在跑的时候，热词之类的提示不开 Tk 窗口。主线程一旦去等模型、抽音频或刷日志，按钮和关闭就冻住。日志若每零点几秒插一行，主线程一直在改文本，窗口被拉得很长，点什么都慢。
-
-Swift 外壳和识别不在同一个进程里。界面只管窗口、菜单栏、权限、快捷键和粘贴。识别、ffmpeg 和 WebSocket 在旁边。client 和 server 直接读两个配置文件，不导入打包后的 `batch_transcribe`。发送进度和转录进度各自只占一行，数字从这段音频的 0、60、120 改到结尾，完成时间留在这一行上。处理耗时另起一行。完成、失败和文件名仍马上留下。所以转录的时候界面仍然顺。要开的 macOS 窗口就是 `./build-macos.sh` 打出的 `dist/CapsWriter.app`。安装盘是另一个命令：`./build-macos.sh dmg`。
+| 模型 | 加载 | 识别 | RTF | 相对 1.7B 8bit 的字错率 |
+| --- | ---: | ---: | ---: | ---: |
+| SenseVoice Small | 1.80 秒 | 3.34 秒 | 0.006 | 18.8% |
+| Fun-ASR-Nano | 2.56 秒 | 31.08 秒 | 0.052 | 22.9% |
+| Qwen3-ASR 0.6B 8bit | 1.39 秒 | 27.11 秒 | 0.045 | 2.6% |
+| Qwen3-ASR 0.6B 6bit | 1.28 秒 | 24.28 秒 | 0.040 | 2.8% |
+| Qwen3-ASR 0.6B 4bit | 1.03 秒 | 20.84 秒 | 0.035 | 5.8% |
+| Qwen3-ASR 0.6B mxfp4 | 1.02 秒 | 20.90 秒 | 0.035 | 3.9% |
+| **Qwen3-ASR 1.7B 8bit** | **3.04 秒** | **61.36 秒** | **0.102** | **0.0%** |
+| **Qwen3-ASR 1.7B 6bit** | **2.68 秒** | **51.28 秒** | **0.085** | **0.1%** |
+| Qwen3-ASR 1.7B 4bit | 2.18 秒 | 39.90 秒 | 0.067 | 3.6% |
+| Qwen3-ASR 1.7B mxfp4 | 2.01 秒 | 38.60 秒 | 0.064 | 6.4% |
 
 
 ## 🎬 快速开始

@@ -61,14 +61,17 @@ struct BatchWindowView: View {
                 get: { model.model },
                 set: { model.selectModel($0) }
             )) {
-                ForEach(modelChoices, id: \.id) { item in
+                ForEach(model.availableModels, id: \.id) { item in
                     Text(item.label).tag(item.id)
                 }
             }
             .labelsHidden()
-            .frame(width: 210)
+            .frame(width: 250)
             .disabled(model.busy)
-            .help("Qwen3-ASR 可选 1.7B 或 0.6B。换了马上写入服务端配置，server 标签跟着变。下次开始时，服务端若还是旧模型，会先停掉再拉起。正在转录时不能换。")
+            .help("只列出本机 models 里已经放好的模型。放进新目录后点刷新。换了马上写入服务端配置。正在转录时不能换。")
+            Button("刷新", action: model.refreshModels)
+                .disabled(model.busy)
+                .help("重新查看 models 目录，把新放进去的模型加进菜单。")
             Text("日志")
             Picker("", selection: $model.logLevel) {
                 ForEach(logLevels, id: \.self) { level in

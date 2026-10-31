@@ -7,7 +7,9 @@ REPOS = {
     'SenseVoiceSmall': 'mlx-community/SenseVoiceSmall',
     'Fun-ASR-Nano-2512': 'mlx-community/Fun-ASR-Nano-2512',
     'Qwen3-ASR-1.7B-8bit': 'mlx-community/Qwen3-ASR-1.7B-8bit',
+    'Qwen3-ASR-1.7B-4bit': 'mlx-community/Qwen3-ASR-1.7B-4bit',
     'Qwen3-ASR-0.6B-8bit': 'mlx-community/Qwen3-ASR-0.6B-8bit',
+    'Qwen3-ASR-0.6B-4bit': 'mlx-community/Qwen3-ASR-0.6B-4bit',
     'Qwen3-ForcedAligner-0.6B-8bit': 'mlx-community/Qwen3-ForcedAligner-0.6B-8bit',
 }
 

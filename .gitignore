@@ -147,6 +147,8 @@ cython_debug/
 
 # 模型文件（体积巨大，只保留下载链接）
 models/*/*/
+models/mlx/*/
+!models/mlx/下载说明.txt
 models/*.py
 
 # 日志与按年归档的文件夹（如 2026/01/...）

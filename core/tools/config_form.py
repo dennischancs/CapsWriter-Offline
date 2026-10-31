@@ -292,7 +292,8 @@ def _memory_bytes(memory, fallback):
 
 def shown_server_model(engine, variant, memory=None):
     """和批量菜单用同一套算法。auto 展开成将要加载的 1.7b 或 0.6b。"""
-    explicit = ('1.7b', '0.6b')
+    selector = _qwen_selector()
+    explicit = tuple(selector.QWEN_VARIANTS)
     engines = ('sensevoice', 'fun_asr_nano', 'qwen_asr', 'paraformer')
     if engine == 'qwen_asr':
         if variant in explicit:
@@ -705,7 +706,7 @@ _STATIC_HELP = {
     ('ServerConfig', 'port'): '服务端监听端口。客户端要填同一个端口。',
     ('ServerConfig', 'model_type'): '用哪个语音模型。可以是 sensevoice、fun_asr_nano、qwen_asr、paraformer。',
     ('ServerConfig', 'model_backend'): 'auto 在 Mac 上走 MLX。onnx 强制现有引擎。mlx 强制 MLX，Paraformer 除外。',
-    ('ServerConfig', 'qwen_mlx_variant'): 'auto 按内存选 1.7B 或 0.6B。也可以写成 0.6b 或 1.7b。',
+    ('ServerConfig', 'qwen_mlx_variant'): 'auto 按内存选 1.7B 8bit 或 0.6B 8bit。也可以写成 0.6b、1.7b，或 1.7b-4bit、1.7b-6bit、1.7b-mxfp4、0.6b-4bit、0.6b-6bit、0.6b-mxfp4。',
     ('ServerConfig', 'mlx_auto_download'): '缺模型目录时是否下载。默认只报缺哪个目录，不下载。',
     ('ServerConfig', 'format_num'): '输出时是否把中文数字转成阿拉伯数字。',
     ('ServerConfig', 'format_spell'): '输出时是否调整中文和英文之间的空格。',
