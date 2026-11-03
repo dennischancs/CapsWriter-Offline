@@ -55,7 +55,7 @@ Apple Silicon 上，SenseVoice、Fun-ASR-Nano、Qwen3-ASR 使用 `models/mlx/` �
 - [模型对比](模型对比.md) — 这台 Mac mini M4 上四个 MLX 模型的耗时、字错率和 GPU 占用，没有录音正文
 - [优化计划](优化计划.md) — SenseVoice Small 要把字错率收到 10% 以内；神经引擎只做一次对照，不拿它提精度
 
-当前版本是 `2.37.2`，只认 `pyproject.toml`。
+当前版本是 `2.37.3`，只认 `pyproject.toml`。
 
 
 ## 💻 平台支持
@@ -81,12 +81,12 @@ CapsWriter 的特别之处在于追求：
 只支持 Apple Silicon。识别走 MLX / Metal。Intel Mac 除外。
 
 1. 权重放在 `models/mlx/`。下载地址和 6bit、mxfp4 的转换命令在 `models/mlx/下载说明.txt`。
-2. 打包：`./build-macos.sh` 得到未签名的 `dist/CapsWriter.app`。`./build-macos.sh dmg` 得到安装盘，打开后拖到「应用程序」。两个参数不要一起写。
+2. 打包：`./build-macos.sh` 得到 `dist/CapsWriter.app`。它有临时签名，没有开发者证书，也没有公证。`./build-macos.sh dmg` 得到安装盘，打开后拖到「应用程序」。两个参数不要一起写。
 3. 打开 app。按住右 Option 说话，松开后粘贴上屏。第一次会带起服务端，再开一次不会再加载一份模型。
 4. 批量转录在 app 里选文件或文件夹。菜单只列出本机已经放好的模型。放进新目录后点「刷新」。换了会写入 `config_server.py`，下次开始前如果服务端还是旧模型，会先停再开。
 5. 默认 `qwen_mlx_variant = 'auto'`。它会按顺序改用本机已经放好的权重，不会固定去要没装上的那一档。16GB 及以上先找 1.7B 的 8bit、6bit、4bit、mxfp4，都没有再找 0.6B 的同样四档。不到 16GB 时先找 0.6B，再找 1.7B。要固定某一档就写成 `1.7b-8bit`、`1.7b-6bit`、`0.6b-mxfp4` 这样，写明了就不往下找。
 
-已经写好的同名 `.srt` 会跳过。点停止会留下已完成的文件。超过 2 小时的文件会先切开再合并。app 未签名、未公证。文件转录需要 [ffmpeg](https://ffmpeg.org/download.html)。
+已经写好的同名 `.srt` 会跳过。点停止会留下已完成的文件。超过 2 小时的文件会先切开再合并。app 是临时签名，没有公证。第一次打开后到系统设置里允许辅助功能。重新打包会换掉签名，需要再允许一次。文件转录需要 [ffmpeg](https://ffmpeg.org/download.html)。
 
 这台 Mac mini M4（16GB）上，2026-10-31 测了一段播客的前 10 分钟。音频转成 16 kHz 单声道，每 60 秒一段、不重叠。识别耗时不含加载。RTF 是识别耗时除以 600 秒。字错率对照的是同一段上 Qwen3-ASR 1.7B 8bit 的结果，去掉标点和空白之后按字计算，不是人工校对。所以 1.7B 8bit 这一行是 0。6bit、4bit 和 mxfp4 都是从 8bit 再量化的，误差里包含第二次量化。推荐用加粗的 **1.7B 8bit** 和 **1.7B 6bit**：前者作为对照，后者几乎一样，识别更快。
 

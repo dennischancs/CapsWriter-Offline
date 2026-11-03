@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.37.2`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.37.3`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -65,6 +65,7 @@
 - [x] 2.37.0 批量窗口的 Qwen3-ASR 可以选 1.7B 或 0.6B 的 8bit、6bit、4bit、mxfp4。`auto` 仍是对应体积的 8bit。菜单只列出本机已经放好权重的项，点「刷新」后重新列出。同一段 10 分钟音频上，readme 记下加载、识别、RTF，以及相对 1.7B 8bit 的字错率，并推荐 1.7B 8bit 和 6bit。
 - [x] 2.37.1 `qwen_mlx_variant = auto` 时，本机没有 1.7B 8bit 就改用已经放好的目录，服务端不再因为缺这个目录退出。写明规格时仍按名字查找。
 - [x] 2.37.2 `auto` 按内存依次选用本机已有权重。16GB 及以上先 1.7B 的 8bit、6bit、4bit、mxfp4，再 0.6B 同样四档。不到 16GB 时先 0.6B 再 1.7B。菜单和配置摘要显示将要加载的那一档，点刷新后按新目录重选。写明规格时不往下找。
+- [x] 2.37.3 `./build-macos.sh` 打出的 `dist/CapsWriter.app` 带临时签名。`codesign --verify` 通过，Info.plist 绑进签名，标识是 `offline.capswriter.shell`。没有开发者证书，也没有公证。重新打包后辅助功能要再允许一次。
 - [x] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [x] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限、并且列不出任何输入设备时，提示去系统设置，进程不崩溃。默认输入编号是 -1、但还能列出输入设备时，日志写出这些编号，约 2 秒打不开就跳过，不把这件事说成没有麦克风权限。没有辅助功能权限时文字留在系统通知和终端里，不上屏。
 
@@ -72,7 +73,7 @@
 
 - [x] 不做 Intel Mac。
 - [x] 不把识别引擎改写成 Swift，也不套 `mlx-audio` 的 HTTP 服务。Mac 菜单栏外壳可以是 Swift。
-- [x] 不做签名公证的 `.app`，不做 Mac App Store。
+- [x] 不做开发者证书签名和公证，不做 Mac App Store。打包仍给整个 app 打临时签名。
 - [x] 不把 llama.cpp Metal 动态库当作 macOS 主路径，不把 GGUF 导出成 CoreML。
 - [x] 不移植 SenseVoice 的 CTC 热词雷达。热词保证留在客户端替换。
 - [x] 不在 Mac 上吞噬 CapsLock。
@@ -123,7 +124,7 @@ Paraformer 和 CT-Transformer 标点没有可接入的 Python MLX 实现。它�
 
 - 不重写识别算法，不改 WebSocket 协议，不改 `text` / `text_accu` 合并。
 - 识别引擎留在 Python。Mac 的菜单栏、权限、快捷键、粘贴和批量窗口可以是 Swift，继续连现在的 `start_server`。不把 `mlx-audio` 的 HTTP 服务套在外面。MLX 仍在现有 worker 进程里调用。
-- 第一期不做签名公证，不做 Mac App Store。Python 客户端的权限仍授给终端。Swift 外壳启动时自己请求麦克风、辅助功能和输入监控，开关仍要自己打开。
+- 不做开发者证书签名和公证，不做 Mac App Store。打包会给整个 `CapsWriter.app` 打临时签名，辅助功能认的是这一份签名。Python 客户端从终端跑时，权限仍授给终端。Swift 外壳启动时自己请求麦克风、辅助功能和输入监控，开关仍要自己打开。
 - 不承诺 8GB 内存流畅跑 Qwen3-ASR 1.7B。内存不够时自动改用 0.6B 8bit，并写日志。
 - 不把 Paraformer 当成需要加速的引擎。它仍然是纪念引擎。
 - 不在 Mac 上复刻 CapsLock 吞噬。系统会自己翻转这个灯，默认键必须换掉。

@@ -1,5 +1,12 @@
 # 更新日志
 
+## v2.37.3
+
+- **打包时签名**：`./build-macos.sh` 打出的 `dist/CapsWriter.app` 会给整个包打临时签名。`codesign --verify` 通过，Info.plist 绑进签名，标识是 `offline.capswriter.shell`。没有开发者证书，也没有公证。这样系统设置里的辅助功能才能对上这一份程序，不用每次打开都再问一次。重新打包会换签名，需要再允许一次。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_macos_build tests.test_build_support.BuildSupportTest.test_version_sources_match`，29 项通过。没有重跑 PyInstaller。
+- 现有的 `dist/CapsWriter.app` 和 `/Applications/CapsWriter.app` 已用同一条命令签过。两份签名不同，允许平时打开的那一份。签名变了，下次打开还会问一次，打开开关后再开就不会再问。
+
+
 ## v2.37.2
 
 - **auto 有顺序**：16GB 及以上先找 1.7B 的 8bit、6bit、4bit、mxfp4，再找 0.6B 的同样四档。不到 16GB 时先 0.6B 再 1.7B。只用本机已经放好权重的目录，空目录不算。写明 `1.7b` 或 `1.7b-6bit` 时不往下找。菜单和配置摘要显示将要加载的那一档，点刷新后按新目录重选。

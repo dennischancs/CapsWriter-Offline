@@ -449,8 +449,39 @@ def remove_loose_app(app):
         raise BuildError('dmg 已打出，但旁边还有 %s' % app)
 
 
+def sign_macos_app(app, runner=None):
+    """给整个 app 打临时签名，把 Info.plist 和包内文件封进去。
+
+    没有开发者证书，也不是公证。链接器留在主程序上的签名对不上辅助功能。
+    只签外壳，不重签里面的 Python 和动态库。
+    """
+    app = Path(app)
+    if not app.is_dir():
+        raise BuildError('没有 app %s' % app)
+    command = ['codesign', '--force', '--sign', '-', str(app)]
+    if runner is None:
+        try:
+            proc = subprocess.run(command, capture_output=True, text=True)
+        except OSError as exc:
+            raise BuildError('找不到 codesign：%s' % exc)
+    else:
+        proc = runner(command)
+    code = proc.returncode if hasattr(proc, 'returncode') else int(proc)
+    if code != 0:
+        detail = ''
+        if hasattr(proc, 'stderr') or hasattr(proc, 'stdout'):
+            parts = []
+            for part in (getattr(proc, 'stderr', '') or '', getattr(proc, 'stdout', '') or ''):
+                part = part.strip()
+                if part:
+                    parts.append(part)
+            detail = '\n'.join(parts)
+        raise BuildError('给 %s 签名失败%s' % (app.name, ('：' + detail) if detail else ''))
+    return app
+
+
 def create_dmg(app, version, runner=None):
-    """打出未签名的 dmg。镜像里是 app 和 Applications 链接，不是符号链接回仓库。"""
+    """打出未公证的 dmg。里面的 app 已经临时签名，镜像本身不签名。"""
     layout = stage_dmg(app, version)
     command = hdiutil_command(layout)
     run = subprocess.run if runner is None else runner
@@ -584,7 +615,7 @@ def build_target(extra):
     return None
 
 
-def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None, package_app=True, shell_binary=None, swift_runner=None, scratch=None, dmg_runner=None, output='app'):
+def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, lsof_fn=None, probe=None, candidates=None, package_app=True, shell_binary=None, swift_runner=None, scratch=None, dmg_runner=None, sign_runner=None, output='app'):
     root = Path(root)
     if output not in ('app', 'dmg', 'client'):
         raise BuildError('输出只能是 app 或 dmg')
@@ -643,6 +674,7 @@ def build_repo(root, client_only=False, python=None, runner=None, kind_of=None, 
         packed.append('包里没有图标')
     if packed:
         raise BuildError('\n'.join(packed))
+    sign_macos_app(app, runner=sign_runner)
     drop_process_junk(root, scratch=scratch)
     if output != 'dmg':
         return [app]
