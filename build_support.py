@@ -79,17 +79,11 @@ def _discard(path):
 
 
 def _ignore_unpacked_mlx(folder, names):
-    """安装包只带指定的 MLX 目录。其余模型留在仓库里。"""
+    """安装包只带 catalog.PACK_DIRS。其余模型留在仓库里。"""
     if basename(folder) != 'mlx':
         return set()
-    allowed = {
-        'SenseVoiceSmall',
-        'Qwen3-ASR-0.6B-6bit',
-        'Qwen3-ASR-0.6B-mxfp4',
-        'Qwen3-ASR-1.7B-6bit',
-        'Qwen3-ASR-1.7B-4bit',
-        'Qwen3-ForcedAligner-0.6B-8bit',
-    }
+    from core.server.engines.mlx.catalog import PACK_DIRS
+    allowed = set(PACK_DIRS)
     return {
         name for name in names
         if name not in allowed and not name.startswith('.') and isdir(join(folder, name))

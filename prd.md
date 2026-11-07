@@ -6,7 +6,7 @@
 
 ## 验收清单
 
-版本只认 `pyproject.toml` 的 `version`，现在是 `2.37.3`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
+版本只认 `pyproject.toml` 的 `version`，现在是 `2.38.0`。做法仍在 [dev-plan.md](dev-plan.md)，不要另建 `SPEC.md` 或 `TASKS.md`。
 
 ### 已完成
 
@@ -66,6 +66,7 @@
 - [x] 2.37.1 `qwen_mlx_variant = auto` 时，本机没有 1.7B 8bit 就改用已经放好的目录，服务端不再因为缺这个目录退出。写明规格时仍按名字查找。
 - [x] 2.37.2 `auto` 按内存依次选用本机已有权重。16GB 及以上先 1.7B 的 8bit、6bit、4bit、mxfp4，再 0.6B 同样四档。不到 16GB 时先 0.6B 再 1.7B。菜单和配置摘要显示将要加载的那一档，点刷新后按新目录重选。写明规格时不往下找。
 - [x] 2.37.3 `./build-macos.sh` 打出的 `dist/CapsWriter.app` 带临时签名。`codesign --verify` 通过，Info.plist 绑进签名，标识是 `offline.capswriter.shell`。没有开发者证书，也没有公证。重新打包后辅助功能要再允许一次。
+- [x] 2.38.0 安装包里的 MLX 只有 SenseVoice Small、Qwen3-ASR 0.6B mxfp4、1.7B 6bit，以及对齐器。0.6B 6bit 和 1.7B 4bit 留在仓库，不打进去。不到 16GB 会用 0.6B mxfp4，16GB 及以上会用 1.7B 6bit。
 - [x] A1. Mac 上启动客户端，按住右 Option 说话，松开后文字出现在「文本编辑」。不需要 root。这一步的识别可以还是 CPU，只要进程不是因为 Win32 导入退出。
 - [x] A2. 菜单栏能打开日志目录、打开热词文件、退出。没有麦克风权限、并且列不出任何输入设备时，提示去系统设置，进程不崩溃。默认输入编号是 -1、但还能列出输入设备时，日志写出这些编号，约 2 秒打不开就跳过，不把这件事说成没有麦克风权限。没有辅助功能权限时文字留在系统通知和终端里，不上屏。
 

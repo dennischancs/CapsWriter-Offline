@@ -17,13 +17,11 @@ MENU = (
     ('paraformer', 'Paraformer', ('Paraformer',), None),
 )
 
-# 这次安装包只带这几份。对齐器仍要带上，文件字幕还用它。
+# 安装包每种尺寸只带一份。8GB 用 0.6B mxfp4，16GB 及以上用 1.7B 6bit。对齐器仍要带上。
 PACK_DIRS = (
     'SenseVoiceSmall',
-    'Qwen3-ASR-0.6B-6bit',
     'Qwen3-ASR-0.6B-mxfp4',
     'Qwen3-ASR-1.7B-6bit',
-    'Qwen3-ASR-1.7B-4bit',
     'Qwen3-ForcedAligner-0.6B-8bit',
 )
 

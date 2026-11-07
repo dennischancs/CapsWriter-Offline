@@ -1,5 +1,10 @@
 # 更新日志
 
+## v2.38.0
+
+- **默认安装包少两份量化**：`./build-macos.sh` 打进包的 MLX 只有 SenseVoice Small、Qwen3-ASR 0.6B mxfp4、1.7B 6bit，以及对齐器。0.6B 6bit 和 1.7B 4bit 还在仓库的 `models/mlx/`，不进包。放进新目录后点「刷新」仍能选。`auto` 不到 16GB 会用包里的 0.6B mxfp4，16GB 及以上会用 1.7B 6bit。
+- 验证：capswriter 环境的 `python3 -m unittest tests.test_build_support`，11 项通过。接着跑了 `./build-macos.sh`，得到 5.3GB 的 `dist/CapsWriter.app`，短版本 2.38.0。包内 MLX 只有这四份。三个程序和 Swift 界面都是 arm64。`codesign --verify` 通过，标识是 `offline.capswriter.shell`，临时签名，没有 TeamIdentifier。
+
 ## v2.37.3
 
 - **打包时签名**：`./build-macos.sh` 打出的 `dist/CapsWriter.app` 会给整个包打临时签名。`codesign --verify` 通过，Info.plist 绑进签名，标识是 `offline.capswriter.shell`。没有开发者证书，也没有公证。这样系统设置里的辅助功能才能对上这一份程序，不用每次打开都再问一次。重新打包会换签名，需要再允许一次。
